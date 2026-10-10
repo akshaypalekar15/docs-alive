@@ -1,34 +1,19 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { motion, useMotionValue, useReducedMotion, useSpring, type MotionValue } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
 
 const OFFSCREEN = -9999;
 const INTERACTIVE = 'a, button, label, input, textarea, select, [role="button"]';
 
-const ECHOES = [
-  { size: 6, opacity: 0.3, stiffness: 240, damping: 26 },
-  { size: 5, opacity: 0.18, stiffness: 160, damping: 24 },
-  { size: 4, opacity: 0.1, stiffness: 100, damping: 22 },
-];
-
-function Echo({ size, opacity, stiffness, damping, x, y }: { size: number; opacity: number; stiffness: number; damping: number; x: MotionValue<number>; y: MotionValue<number> }) {
-  const sx = useSpring(x, { stiffness, damping, mass: 0.6 });
-  const sy = useSpring(y, { stiffness, damping, mass: 0.6 });
-
-  return (
-    <motion.div
-      className="cur cur-echo"
-      style={{ x: sx, y: sy, width: size, height: size, opacity }}
-      aria-hidden="true"
-    />
-  );
-}
+type Ripple = { id: number; x: number; y: number };
 
 export default function Cursor() {
   const reduced = useReducedMotion();
   const [hovering, setHovering] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [hidden, setHidden] = useState(true);
+  const [ripples, setRipples] = useState<Ripple[]>([]);
+  const nextId = useRef(0);
 
   const x = useMotionValue(OFFSCREEN);
   const y = useMotionValue(OFFSCREEN);
@@ -55,19 +40,25 @@ export default function Cursor() {
       const el = e.target instanceof Element ? e.target.closest(INTERACTIVE) : null;
       setHovering(!!el);
     };
-    const onDown = () => setPressed(true);
+    const onDown = (e: PointerEvent) => {
+      setPressed(true);
+      const id = nextId.current++;
+      setRipples((r) => [...r, { id, x: e.clientX, y: e.clientY }]);
+    };
     const onUp = () => setPressed(false);
     const onLeave = () => {
       setHidden(true);
       x.set(OFFSCREEN);
       y.set(OFFSCREEN);
     };
+    const onContext = () => setRipples([]);
 
     window.addEventListener('pointermove', onMove, { passive: true });
     window.addEventListener('pointerover', onOver, { passive: true });
     window.addEventListener('pointerdown', onDown, { passive: true });
     window.addEventListener('pointerup', onUp, { passive: true });
     document.addEventListener('pointerleave', onLeave);
+    document.addEventListener('contextmenu', onContext);
 
     return () => {
       window.removeEventListener('pointermove', onMove);
@@ -75,6 +66,7 @@ export default function Cursor() {
       window.removeEventListener('pointerdown', onDown);
       window.removeEventListener('pointerup', onUp);
       document.removeEventListener('pointerleave', onLeave);
+      document.removeEventListener('contextmenu', onContext);
     };
   }, [x, y, reduced]);
 
@@ -82,9 +74,20 @@ export default function Cursor() {
 
   return (
     <>
-      {ECHOES.map((e, i) => (
-        <Echo key={i} {...e} x={x} y={y} />
-      ))}
+      <AnimatePresence>
+        {ripples.map((r) => (
+          <motion.span
+            key={r.id}
+            className="cur cur-ripple"
+            style={{ left: r.x, top: r.y }}
+            initial={{ scale: 0.15, opacity: 0.5 }}
+            animate={{ scale: 1, opacity: 0 }}
+            transition={{ duration: 0.6, ease: 'easeOut' }}
+            onAnimationComplete={() => setRipples((list) => list.filter((i) => i.id !== r.id))}
+            aria-hidden="true"
+          />
+        ))}
+      </AnimatePresence>
 
       <motion.div className="cur cur-ring" style={{ x: ringX, y: ringY }} aria-hidden="true">
         <motion.div
