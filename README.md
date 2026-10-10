@@ -21,7 +21,7 @@ Everything runs client-side — files never leave the browser.
 ## Getting started
 
 ```bash
-git clone https://github.com/<YOUR_USERNAME>/docs-alive.git
+git clone https://github.com/akshaypalekar15/docs-alive.git
 cd docs-alive
 npm install
 npm run dev
