@@ -1,39 +1,162 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
-import { MotionConfig, motion, useScroll, useSpring } from 'framer-motion';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AnimatePresence,
+  MotionConfig,
+  motion,
+  motionValue,
+  useScroll,
+  useSpring,
+  type MotionValue,
+} from 'framer-motion';
 import DOMPurify from 'dompurify';
 import Background from '@/components/Background';
 import Cursor from '@/components/Cursor';
 import ThemeToggle from '@/components/ThemeToggle';
+import TocNav from '@/components/TocNav';
+import { buildTree, rootOf, type Heading } from '@/lib/toc';
 
-type Block = { html: string; id: string; level: number; text: string };
+type Block = { html: string; level: number };
+
+type Metric = { id: string; top: number; end: number };
+
+/** Distance from the top of the viewport that counts as "the current heading". */
+const LINE = 140;
+const SCROLL_OFFSET = 24;
 
 export default function Viewer({ html, name, onReset }: { html: string; name: string; onReset: () => void }) {
   const [active, setActive] = useState('');
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const { scrollYProgress } = useScroll();
   const progress = useSpring(scrollYProgress, { stiffness: 120, damping: 30 });
 
-  const blocks: Block[] = useMemo(() => {
+  // Headings are collected with querySelectorAll rather than by walking
+  // body.children, so headings nested inside other elements still get an id.
+  const { blocks, headings } = useMemo(() => {
     const doc = new DOMParser().parseFromString(DOMPurify.sanitize(html), 'text/html');
-    let n = 0;
-    return Array.from(doc.body.children).map((el) => {
-      const isHeading = /^H[1-3]$/.test(el.tagName);
-      if (isHeading) el.id = `h-${n++}`;
-      return { html: el.outerHTML, id: el.id, level: isHeading ? Number(el.tagName[1]) : 0, text: el.textContent ?? '' };
+    const hs: Heading[] = Array.from(doc.querySelectorAll('h1, h2, h3')).map((el, i) => {
+      const id = `h-${i}`;
+      el.id = id;
+      return { id, level: Number(el.tagName[1]), text: (el.textContent ?? '').trim() };
     });
+    const bs: Block[] = Array.from(doc.body.children).map((el) => ({
+      html: el.outerHTML,
+      level: /^H[1-3]$/.test(el.tagName) ? Number(el.tagName[1]) : 0,
+    }));
+    return { blocks: bs, headings: hs };
   }, [html]);
 
-  const toc = blocks.filter((b) => b.level > 0);
+  const tree = useMemo(() => buildTree(headings), [headings]);
+  const ancestor = useMemo(() => rootOf(tree), [tree]);
 
-  // Scroll-spy: highlight the heading nearest the top of the viewport
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(tree.length ? [tree[0].id] : []));
+
+  const fills = useMemo(() => {
+    const map = new Map<string, MotionValue<number>>();
+    for (const h of headings) map.set(h.id, motionValue(0));
+    return map;
+  }, [headings]);
+
+  const metrics = useRef<Metric[]>([]);
+
+  const measure = useCallback(() => {
+    const y = window.scrollY;
+    const next: Metric[] = [];
+    for (let i = 0; i < headings.length; i++) {
+      const el = document.getElementById(headings[i].id);
+      if (!el) continue;
+      const top = el.getBoundingClientRect().top + y;
+      const nextEl = headings[i + 1] ? document.getElementById(headings[i + 1].id) : null;
+      const end = nextEl
+        ? nextEl.getBoundingClientRect().top + y
+        : document.documentElement.scrollHeight;
+      next.push({ id: headings[i].id, top, end });
+    }
+    metrics.current = next;
+  }, [headings]);
+
+  const update = useCallback(() => {
+    const m = metrics.current;
+    if (!m.length) return;
+    const y = window.scrollY + LINE;
+
+    let current = m[0].id;
+    for (const s of m) if (y >= s.top) current = s.id;
+
+    for (const s of m) {
+      const span = Math.max(1, s.end - s.top);
+      fills.get(s.id)?.set(Math.min(1, Math.max(0, (y - s.top) / span)));
+    }
+    setActive((prev) => (prev === current ? prev : current));
+
+    // Auto-open the group containing whatever section is being read.
+    const root = ancestor[current];
+    if (root) setExpanded((prev) => (prev.has(root) ? prev : new Set(prev).add(root)));
+  }, [fills, ancestor]);
+
   useEffect(() => {
-    const obs = new IntersectionObserver(
-      (entries) => entries.forEach((e) => e.isIntersecting && setActive(e.target.id)),
-      { rootMargin: '0px 0px -75% 0px' }
-    );
-    toc.forEach((b) => { const el = document.getElementById(b.id); if (el) obs.observe(el); });
-    return () => obs.disconnect();
-  }, [toc]);
+    measure();
+    update();
+
+    let frame = 0;
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; update(); });
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    const ro = new ResizeObserver(onScroll);
+    ro.observe(document.body);
+
+    const hash = window.location.hash.slice(1);
+    if (hash) {
+      const el = document.getElementById(hash);
+      if (el) window.scrollTo({ top: el.getBoundingClientRect().top + window.scrollY - SCROLL_OFFSET });
+    }
+
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      ro.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [measure, update]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDrawerOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  const onToggle = useCallback((id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const onNavigate = useCallback((e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
+    e.preventDefault();
+    const el = document.getElementById(id);
+    if (!el) return;
+    const top = el.getBoundingClientRect().top + window.scrollY - SCROLL_OFFSET;
+    window.scrollTo({ top, behavior: 'smooth' });
+    history.pushState(null, '', `#${id}`);
+    setDrawerOpen(false);
+  }, []);
+
+  const nav = (
+    <TocNav
+      nodes={tree}
+      active={active}
+      expanded={expanded}
+      progress={fills}
+      onToggle={onToggle}
+      onNavigate={onNavigate}
+    />
+  );
 
   return (
     <MotionConfig reducedMotion="user">
@@ -41,18 +164,14 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
       <Cursor />
       <ThemeToggle />
       <motion.div className="progress" style={{ scaleX: progress }} />
+
       <div className="shell">
         <aside className="toc">
           <button className="back" onClick={onReset}>Upload another</button>
           <p className="fname">{name}</p>
-          <nav>
-            {toc.map((b) => (
-              <a key={b.id} href={`#${b.id}`} data-active={active === b.id} style={{ paddingLeft: (b.level - 1) * 14 }}>
-                {b.text}
-              </a>
-            ))}
-          </nav>
+          {nav}
         </aside>
+
         <article className="doc">
           {blocks.map((b, i) => (
             <motion.div
@@ -61,11 +180,54 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
               whileInView={{ opacity: 1 }}
               viewport={{ once: true, margin: '-8% 0px' }}
               transition={{ duration: 0.5 }}
+              data-level={b.level}
               dangerouslySetInnerHTML={{ __html: b.html }}
             />
           ))}
         </article>
       </div>
+
+      {headings.length > 0 && (
+        <motion.button
+          className="toc-btn"
+          onClick={() => setDrawerOpen(true)}
+          whileTap={{ scale: 0.94 }}
+          aria-label="Open table of contents"
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h10" />
+          </svg>
+          Contents
+        </motion.button>
+      )}
+
+      <AnimatePresence>
+        {drawerOpen && (
+          <>
+            <motion.div
+              className="toc-scrim"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setDrawerOpen(false)}
+            />
+            <motion.div
+              className="toc-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Table of contents"
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', stiffness: 380, damping: 38 }}
+            >
+              <button className="back" onClick={onReset}>Upload another</button>
+              <p className="fname">{name}</p>
+              {nav}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </MotionConfig>
   );
 }
