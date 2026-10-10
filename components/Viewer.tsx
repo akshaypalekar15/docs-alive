@@ -24,6 +24,47 @@ type Metric = { id: string; top: number; end: number };
 const LINE = 140;
 const SCROLL_OFFSET = 24;
 
+/** A paragraph whose entire content is bold, e.g. a styled section title. */
+function isBoldOnly(el: Element): boolean {
+  // childNodes, not children: text nodes don't count as children, so
+  // "text <strong>bold</strong> text" would otherwise look like bold-only.
+  const nodes = Array.from(el.childNodes).filter(
+    (n) => n.nodeType !== 3 || (n.textContent ?? '').trim() !== ''
+  );
+  if (nodes.length !== 1 || nodes[0].nodeType !== 1) return false;
+  if (!/^(STRONG|B)$/.test((nodes[0] as Element).tagName)) return false;
+  const text = (el.textContent ?? '').trim();
+  return text.length > 0 && text.length <= 120;
+}
+
+/**
+ * Walks the document in order and collects headings. Mammoth only emits
+ * <h1>-<h3> for paragraphs using Word's built-in Heading styles, so documents
+ * that fake headings with bold text would otherwise produce an empty TOC —
+ * hence the bold-paragraph fallback.
+ */
+function collectHeadings(doc: Document, boldFallback: boolean): Heading[] {
+  const out: Heading[] = [];
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT);
+  let el = walker.nextNode() as HTMLElement | null;
+  let n = 0;
+
+  while (el) {
+    const real = /^H[1-3]$/.test(el.tagName);
+    if (real || (boldFallback && el.tagName === 'P' && isBoldOnly(el))) {
+      const text = (el.textContent ?? '').trim();
+      if (text) {
+        const id = `h-${n++}`;
+        el.id = id;
+        out.push({ id, level: real ? Number(el.tagName[1]) : 2, text });
+      }
+    }
+    el = walker.nextNode() as HTMLElement | null;
+  }
+
+  return out;
+}
+
 export default function Viewer({ html, name, onReset }: { html: string; name: string; onReset: () => void }) {
   const [active, setActive] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -34,16 +75,13 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   // body.children, so headings nested inside other elements still get an id.
   const { blocks, headings } = useMemo(() => {
     const doc = new DOMParser().parseFromString(DOMPurify.sanitize(html), 'text/html');
-    const hs: Heading[] = Array.from(doc.querySelectorAll('h1, h2, h3')).map((el, i) => {
-      const id = `h-${i}`;
-      el.id = id;
-      return { id, level: Number(el.tagName[1]), text: (el.textContent ?? '').trim() };
-    });
+    const hs = collectHeadings(doc, false);
+    const found = hs.length < 2 ? collectHeadings(doc, true) : hs;
     const bs: Block[] = Array.from(doc.body.children).map((el) => ({
       html: el.outerHTML,
       level: /^H[1-3]$/.test(el.tagName) ? Number(el.tagName[1]) : 0,
     }));
-    return { blocks: bs, headings: hs };
+    return { blocks: bs, headings: found };
   }, [html]);
 
   const tree = useMemo(() => buildTree(headings), [headings]);
@@ -83,9 +121,20 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     let current = m[0].id;
     for (const s of m) if (y >= s.top) current = s.id;
 
-    for (const s of m) {
+    // The final section is often shorter than LINE, so the page runs out of
+    // scroll before that heading is ever "passed" and it stays unhighlighted.
+    // Once the bottom is reached, the last section is by definition the current one.
+    const doc = document.documentElement;
+    const atBottom =
+      doc.scrollHeight > window.innerHeight + 1 &&
+      window.scrollY + window.innerHeight >= doc.scrollHeight - 2;
+    if (atBottom) current = m[m.length - 1].id;
+
+    for (let i = 0; i < m.length; i++) {
+      const s = m[i];
       const span = Math.max(1, s.end - s.top);
-      fills.get(s.id)?.set(Math.min(1, Math.max(0, (y - s.top) / span)));
+      const p = atBottom && i === m.length - 1 ? 1 : Math.min(1, Math.max(0, (y - s.top) / span));
+      fills.get(s.id)?.set(p);
     }
     setActive((prev) => (prev === current ? prev : current));
 
@@ -102,10 +151,16 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     const onScroll = () => {
       if (!frame) frame = requestAnimationFrame(() => { frame = 0; update(); });
     };
+    // Reflow must re-measure, not just re-evaluate: images decoding or fonts
+    // swapping move every heading after the initial mount measurement, which
+    // would leave the scroll-spy permanently out of sync.
+    const onReflow = () => {
+      if (!frame) frame = requestAnimationFrame(() => { frame = 0; measure(); update(); });
+    };
 
     window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onScroll);
-    const ro = new ResizeObserver(onScroll);
+    window.addEventListener('resize', onReflow);
+    const ro = new ResizeObserver(onReflow);
     ro.observe(document.body);
 
     const hash = window.location.hash.slice(1);
@@ -116,7 +171,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
 
     return () => {
       window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onScroll);
+      window.removeEventListener('resize', onReflow);
       ro.disconnect();
       cancelAnimationFrame(frame);
     };
