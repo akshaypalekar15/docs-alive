@@ -5,6 +5,7 @@
   --grid-line:rgba(27,36,48,.05);
   --blob-1:rgba(47,75,255,.32);--blob-2:rgba(124,140,255,.28);--blob-3:rgba(255,228,92,.26);
   --glow:rgba(47,75,255,.18);--mote:var(--accent);
+  --neon:#2F6BFF;--neon-soft:rgba(47,107,255,.35);--neon-bg:rgba(47,107,255,.04);
   --doc-bg:rgba(246,247,249,.78);--rule:#D5DAE1;
 }
 [data-theme=dark]{
@@ -14,6 +15,7 @@
   --grid-line:rgba(255,255,255,.06);
   --blob-1:rgba(123,143,255,.30);--blob-2:rgba(96,116,255,.24);--blob-3:rgba(255,228,92,.14);
   --glow:rgba(123,143,255,.16);--mote:var(--accent);
+  --neon:#6FA8FF;--neon-soft:rgba(111,168,255,.40);--neon-bg:rgba(111,168,255,.06);
   --doc-bg:rgba(22,27,34,.72);--rule:#2A313C;
 }
 *{box-sizing:border-box}
@@ -84,6 +86,18 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 .doc table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:.95rem}
 .doc td,.doc th{border-bottom:1px solid var(--rule);padding:8px;text-align:left}
 .doc img{max-width:100%}
+
+/* Data tables get a neon frame; layout wrappers (single row/cell) are skipped */
+.doc .neon-table{position:relative;border-collapse:separate;border-spacing:0;border:1px solid var(--neon);border-radius:10px;background:var(--neon-bg);overflow:hidden;box-shadow:0 0 0 1px var(--neon-soft),0 0 14px -4px var(--neon),0 0 30px -12px var(--neon);animation:neon 3.8s ease-in-out infinite}
+.doc .neon-table th{color:var(--ink);font-weight:600;background:var(--neon-bg)}
+.doc .neon-table tr:last-child td{border-bottom:0}
+@keyframes neon{
+  0%,100%{box-shadow:0 0 0 1px var(--neon-soft),0 0 14px -4px var(--neon),0 0 30px -12px var(--neon)}
+  50%{box-shadow:0 0 0 1px var(--neon),0 0 22px -2px var(--neon),0 0 54px -8px var(--neon)}
+}
+@media (prefers-reduced-motion:reduce){
+  .doc .neon-table{animation:none;box-shadow:0 0 0 1px var(--neon),0 0 18px -4px var(--neon)}
+}
 
 /* Key phrases get a marker that sweeps in once the block is visible */
 .doc strong,.doc b{font-weight:600;color:var(--marker-ink);background:linear-gradient(var(--marker),var(--marker)) no-repeat 0 20%/0% 75%;animation:sweep .9s .3s forwards}

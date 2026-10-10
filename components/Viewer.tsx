@@ -20,6 +20,17 @@ type Block = { html: string; level: number };
 
 type Metric = { id: string; top: number; end: number };
 
+/**
+ * A table with a single row and single cell is a layout wrapper, not data —
+ * mammoth emits these for things like a resume header block.
+ */
+function isLayoutTable(el: Element): boolean {
+  if (el.tagName !== 'TABLE') return false;
+  const rows = el.querySelectorAll('tr');
+  if (rows.length !== 1) return false;
+  return rows[0].querySelectorAll('td, th').length === 1;
+}
+
 /** Distance from the top of the viewport that counts as "the current heading". */
 const LINE = 140;
 const SCROLL_OFFSET = 24;
@@ -75,6 +86,11 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   // body.children, so headings nested inside other elements still get an id.
   const { blocks, headings } = useMemo(() => {
     const doc = new DOMParser().parseFromString(DOMPurify.sanitize(html), 'text/html');
+
+    for (const t of Array.from(doc.querySelectorAll('table'))) {
+      if (!isLayoutTable(t)) t.classList.add('neon-table');
+    }
+
     const hs = collectHeadings(doc, false);
     const found = hs.length < 2 ? collectHeadings(doc, true) : hs;
     const bs: Block[] = Array.from(doc.body.children).map((el) => ({
