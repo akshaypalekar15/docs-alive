@@ -11,6 +11,7 @@ import {
 } from 'framer-motion';
 import DOMPurify from 'dompurify';
 import Background from '@/components/Background';
+import CountUp from '@/components/CountUp';
 import Cursor from '@/components/Cursor';
 import ThemeToggle from '@/components/ThemeToggle';
 import TocNav from '@/components/TocNav';
@@ -79,6 +80,7 @@ function collectHeadings(doc: Document, boldFallback: boolean): Heading[] {
 export default function Viewer({ html, name, onReset }: { html: string; name: string; onReset: () => void }) {
   const [active, setActive] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const docRef = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll();
   const progress = useSpring(scrollYProgress, { stiffness: 120, damping: 30 });
 
@@ -243,7 +245,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
           {nav}
         </aside>
 
-        <article className="doc">
+        <article className="doc" ref={docRef}>
           {blocks.map((b, i) => (
             <motion.div
               key={i}
@@ -255,6 +257,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
               dangerouslySetInnerHTML={{ __html: b.html }}
             />
           ))}
+          <CountUp root={docRef} token={html} />
         </article>
       </div>
 
