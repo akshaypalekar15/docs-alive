@@ -9,6 +9,10 @@ type Props = {
   token: string;
 };
 
+/**
+ * Hover-driven count-up. Scrolling past a number deliberately does nothing:
+ * only pointing at it (or tapping it) plays the animation, once.
+ */
 export default function CountUp({ root, token }: Props) {
   const reduced = useReducedMotion();
 
@@ -18,14 +22,12 @@ export default function CountUp({ root, token }: Props) {
     const spans = scanForNumbers(el);
     if (!spans.length || reduced) return;
 
-    let observer: IntersectionObserver | null = null;
     const running = new Map<HTMLElement, ReturnType<typeof animate>>();
 
-    // One shot: whichever trigger arrives first wins, and the value settles.
+    // One shot: the value plays and then stays put.
     const play = (span: HTMLElement) => {
       if (span.dataset.played === '1') return;
       span.dataset.played = '1';
-      observer?.unobserve(span);
       running.set(
         span,
         animate(0, Number(span.dataset.count), {
@@ -38,15 +40,7 @@ export default function CountUp({ root, token }: Props) {
       );
     };
 
-    observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) if (entry.isIntersecting) play(entry.target as HTMLElement);
-      },
-      { threshold: 0.5 }
-    );
-    spans.forEach((span) => observer?.observe(span));
-
-    // Delegated so it survives re-scans of the article.
+    // Delegated so it survives re-scans of the article. pointerdown covers touch.
     const onPointer = (e: PointerEvent) => {
       const target = e.target instanceof Element ? e.target.closest('.countup') : null;
       if (target) play(target as HTMLElement);
@@ -55,7 +49,6 @@ export default function CountUp({ root, token }: Props) {
     el.addEventListener('pointerdown', onPointer);
 
     return () => {
-      observer?.disconnect();
       el.removeEventListener('pointerover', onPointer);
       el.removeEventListener('pointerdown', onPointer);
       running.forEach((c) => c.stop());
