@@ -11,6 +11,7 @@ import {
 } from 'framer-motion';
 import DOMPurify from 'dompurify';
 import Background from '@/components/Background';
+import CountUp from '@/components/CountUp';
 import Cursor from '@/components/Cursor';
 import ThemeToggle from '@/components/ThemeToggle';
 import TocNav from '@/components/TocNav';
@@ -19,6 +20,17 @@ import { buildTree, rootOf, type Heading } from '@/lib/toc';
 type Block = { html: string; level: number };
 
 type Metric = { id: string; top: number; end: number };
+
+/**
+ * A table with a single row and single cell is a layout wrapper, not data —
+ * mammoth emits these for things like a resume header block.
+ */
+function isLayoutTable(el: Element): boolean {
+  if (el.tagName !== 'TABLE') return false;
+  const rows = el.querySelectorAll('tr');
+  if (rows.length !== 1) return false;
+  return rows[0].querySelectorAll('td, th').length === 1;
+}
 
 /** Distance from the top of the viewport that counts as "the current heading". */
 const LINE = 140;
@@ -68,6 +80,7 @@ function collectHeadings(doc: Document, boldFallback: boolean): Heading[] {
 export default function Viewer({ html, name, onReset }: { html: string; name: string; onReset: () => void }) {
   const [active, setActive] = useState('');
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const docRef = useRef<HTMLElement>(null);
   const { scrollYProgress } = useScroll();
   const progress = useSpring(scrollYProgress, { stiffness: 120, damping: 30 });
 
@@ -75,6 +88,11 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   // body.children, so headings nested inside other elements still get an id.
   const { blocks, headings } = useMemo(() => {
     const doc = new DOMParser().parseFromString(DOMPurify.sanitize(html), 'text/html');
+
+    for (const t of Array.from(doc.querySelectorAll('table'))) {
+      if (!isLayoutTable(t)) t.classList.add('neon-table');
+    }
+
     const hs = collectHeadings(doc, false);
     const found = hs.length < 2 ? collectHeadings(doc, true) : hs;
     const bs: Block[] = Array.from(doc.body.children).map((el) => ({
@@ -227,7 +245,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
           {nav}
         </aside>
 
-        <article className="doc">
+        <article className="doc" ref={docRef}>
           {blocks.map((b, i) => (
             <motion.div
               key={i}
@@ -239,6 +257,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
               dangerouslySetInnerHTML={{ __html: b.html }}
             />
           ))}
+          <CountUp root={docRef} token={html} />
         </article>
       </div>
 
