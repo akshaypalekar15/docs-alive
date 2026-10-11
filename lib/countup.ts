@@ -7,7 +7,7 @@
  */
 
 const SKIP_SELECTOR =
-  'pre, code, kbd, samp, h1, h2, h3, h4, h5, h6, time, .countup, .no-count';
+  'pre, code, kbd, samp, h1, h2, h3, h4, h5, h6, time, sup, sub, .countup, .no-count';
 
 /** Thousands-grouped numbers, or plain numbers with optional decimals. */
 const PATTERN = /(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)/g;
@@ -15,12 +15,35 @@ const PATTERN = /(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)/g;
 /** Means the digits belong to a range or version: 2012 - 2016, 16.4.0 */
 const RANGE_CHARS = '-–—/×.';
 
+const MONTHS = new Set([
+  'january', 'february', 'march', 'april', 'may', 'june', 'july', 'august',
+  'september', 'october', 'november', 'december',
+  'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec',
+]);
+
+/** Words that make the following number a reference, not a statistic. */
+const LABEL_WORDS = new Set([
+  'figure', 'fig', 'table', 'section', 'chapter', 'step', 'item', 'no', 'nos',
+  'appendix', 'part', 'page', 'ex', 'example', 'see', 'above', 'below',
+]);
+
+/** The word immediately after (or immediately before) a match. */
+function adjacentWord(text: string, index: number, dir: 'before' | 'after'): string {
+  const m =
+    dir === 'after'
+      ? /^\s*([A-Za-z]+)/.exec(text.slice(index))
+      : /([A-Za-z]+)\s*$/.exec(text.slice(0, index));
+  return m ? m[1].toLowerCase() : '';
+}
+
 function isStat(text: string, raw: string, start: number, end: number): boolean {
   const before = start > 0 ? text[start - 1] : '';
   const after = end < text.length ? text[end] : '';
 
-  // Range, version or decimal continuation.
-  if (RANGE_CHARS.includes(before) || RANGE_CHARS.includes(after)) return false;
+  // Range, version or decimal continuation. Guard against the empty string:
+  // 'abc'.includes('') is true, which would skip every number sitting at the
+  // very start or end of a text node (e.g. inside <strong>12.4%</strong>).
+  if ((before && RANGE_CHARS.includes(before)) || (after && RANGE_CHARS.includes(after))) return false;
 
   // Glued to a word: S3, ES6, 6px, React19. A real stat has whitespace around it.
   if (/[A-Za-z]/.test(before) || /[A-Za-z]/.test(after)) return false;
@@ -32,6 +55,14 @@ function isStat(text: string, raw: string, start: number, end: number): boolean 
   if (!raw.includes(',') && !raw.includes('.') && raw.length === 4) {
     if (numeric >= 1900 && numeric <= 2099) return false;
   }
+
+  // Day numbers: "11 October 2026", "October 11, 2026".
+  if (MONTHS.has(adjacentWord(text, end, 'after'))) return false;
+  if (MONTHS.has(adjacentWord(text, start, 'before'))) return false;
+
+  // Cross-references: "content[1]", "Figure 1:", "Section 5".
+  if (before === '[' || after === ']') return false;
+  if (LABEL_WORDS.has(adjacentWord(text, start, 'before'))) return false;
 
   return true;
 }
