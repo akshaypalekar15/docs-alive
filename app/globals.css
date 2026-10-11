@@ -86,7 +86,8 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 .doc table{width:100%;border-collapse:collapse;font-family:var(--sans);font-size:.95rem}
 .doc td,.doc th{border-bottom:1px solid var(--rule);padding:8px;text-align:left}
 .doc img{max-width:100%}
-.countup{font-variant-numeric:tabular-nums}
+.countup{font-variant-numeric:tabular-nums;border-radius:2px}
+.countup:hover{background:var(--neon-bg);box-shadow:0 0 0 2px var(--neon-bg)}
 
 /* Data tables get a neon frame; layout wrappers (single row/cell) are skipped */
 .doc .neon-table{position:relative;border-collapse:separate;border-spacing:0;border:1px solid var(--neon);border-radius:10px;background:var(--neon-bg);overflow:hidden;box-shadow:0 0 0 1px var(--neon-soft),0 0 14px -4px var(--neon),0 0 30px -12px var(--neon);animation:neon 3.8s ease-in-out infinite}

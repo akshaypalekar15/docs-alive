@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
 
 const OFFSCREEN = -9999;
-const INTERACTIVE = 'a, button, label, input, textarea, select, [role="button"]';
+const INTERACTIVE = 'a, button, label, input, textarea, select, [role="button"], .countup';
 
 type Ripple = { id: number; x: number; y: number };
 

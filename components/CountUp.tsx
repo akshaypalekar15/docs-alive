@@ -18,28 +18,49 @@ export default function CountUp({ root, token }: Props) {
     const spans = scanForNumbers(el);
     if (!spans.length || reduced) return;
 
-    const observer = new IntersectionObserver(
+    let observer: IntersectionObserver | null = null;
+    const running = new Map<HTMLElement, ReturnType<typeof animate>>();
+
+    // One shot: whichever trigger arrives first wins, and the value settles.
+    const play = (span: HTMLElement) => {
+      if (span.dataset.played === '1') return;
+      span.dataset.played = '1';
+      observer?.unobserve(span);
+      running.set(
+        span,
+        animate(0, Number(span.dataset.count), {
+          duration: 1.2,
+          ease: [0.16, 1, 0.3, 1],
+          onUpdate: (value) => {
+            span.textContent = formatCount(value, Number(span.dataset.decimals));
+          },
+        })
+      );
+    };
+
+    observer = new IntersectionObserver(
       (entries) => {
-        for (const entry of entries) {
-          if (!entry.isIntersecting) continue;
-          observer.unobserve(entry.target);
-          const span = entry.target as HTMLSpanElement;
-          const target = Number(span.dataset.count);
-          const decimals = Number(span.dataset.decimals);
-          animate(0, target, {
-            duration: 1.2,
-            ease: [0.16, 1, 0.3, 1],
-            onUpdate: (value) => {
-              span.textContent = formatCount(value, decimals);
-            },
-          });
-        }
+        for (const entry of entries) if (entry.isIntersecting) play(entry.target as HTMLElement);
       },
       { threshold: 0.5 }
     );
+    spans.forEach((span) => observer?.observe(span));
 
-    spans.forEach((span) => observer.observe(span));
-    return () => observer.disconnect();
+    // Delegated so it survives re-scans of the article.
+    const onPointer = (e: PointerEvent) => {
+      const target = e.target instanceof Element ? e.target.closest('.countup') : null;
+      if (target) play(target as HTMLElement);
+    };
+    el.addEventListener('pointerover', onPointer);
+    el.addEventListener('pointerdown', onPointer);
+
+    return () => {
+      observer?.disconnect();
+      el.removeEventListener('pointerover', onPointer);
+      el.removeEventListener('pointerdown', onPointer);
+      running.forEach((c) => c.stop());
+      running.clear();
+    };
   }, [root, token, reduced]);
 
   return null;
