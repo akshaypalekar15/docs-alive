@@ -27,7 +27,13 @@ export default function CountUp({ root, token }: Props) {
   useEffect(() => {
     const el = root.current;
     if (!el) return;
-    if (scanForNumbers(el).length === 0 || reduced) return;
+
+    // Idempotent: numbers already wrapped are skipped, so a repeat call
+    // changes nothing. The result therefore cannot be used to decide whether
+    // to attach listeners - React StrictMode runs this effect twice in dev,
+    // and the second run would find nothing and silently stop working.
+    scanForNumbers(el);
+    if (reduced || !el.querySelector('.countup')) return;
 
     const running = new Map<HTMLElement, ReturnType<typeof animate>>();
 
