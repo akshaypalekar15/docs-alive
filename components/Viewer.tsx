@@ -13,6 +13,7 @@ import DOMPurify from 'dompurify';
 import Background from '@/components/Background';
 import CountUp from '@/components/CountUp';
 import Cursor from '@/components/Cursor';
+import LinkPreview from '@/components/LinkPreview';
 import ThemeToggle from '@/components/ThemeToggle';
 import TocNav from '@/components/TocNav';
 import { buildTree, rootOf, type Heading } from '@/lib/toc';
@@ -259,6 +260,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
           ))}
           <CountUp root={docRef} token={html} />
         </article>
+        <LinkPreview root={docRef} />
       </div>
 
       {headings.length > 0 && (
