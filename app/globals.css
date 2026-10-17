@@ -101,6 +101,17 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
   .doc .neon-table{animation:none;box-shadow:0 0 0 1px var(--neon),0 0 18px -4px var(--neon)}
 }
 
+/* Sortable tables: the first row is promoted to headers even when the source
+   used plain <td> cells, which is what most .docx tables do. */
+.doc .neon-table .sortable-head{position:relative;padding-right:24px;font-weight:600;color:var(--ink);background:var(--neon-bg);cursor:pointer;user-select:none;transition:color .15s}
+.doc .neon-table .sortable-head:hover{color:var(--accent)}
+.doc .neon-table .sortable-head:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.doc .neon-table .sortable-head::after{content:"\2195";position:absolute;right:7px;top:50%;transform:translateY(-50%);font-size:.85em;opacity:.35}
+.doc .neon-table .sortable-head[aria-sort="ascending"]::after{content:"\25B2";opacity:1;color:var(--accent)}
+.doc .neon-table .sortable-head[aria-sort="descending"]::after{content:"\25BC";opacity:1;color:var(--accent)}
+.doc .neon-table tbody tr{transition:background-color .15s}
+.doc .neon-table tbody tr:hover{background:var(--row-hover)}
+
 /* Key phrases get a marker that sweeps in once the block is visible */
 .doc strong,.doc b{font-weight:600;color:var(--marker-ink);background:linear-gradient(var(--marker),var(--marker)) no-repeat 0 20%/0% 75%;animation:sweep .9s .3s forwards}
 

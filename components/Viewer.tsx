@@ -14,6 +14,7 @@ import {
 import DOMPurify from 'dompurify';
 import Background from '@/components/Background';
 import LinkPreview from '@/components/LinkPreview';
+import TableSort from '@/components/TableSort';
 import ThemeToggle from '@/components/ThemeToggle';
 import TocNav from '@/components/TocNav';
 import { buildTree, rootOf, type Heading } from '@/lib/toc';
@@ -113,7 +114,8 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     const doc = new DOMParser().parseFromString(DOMPurify.sanitize(html), 'text/html');
 
     for (const t of Array.from(doc.querySelectorAll('table'))) {
-      if (!isLayoutTable(t)) t.classList.add('neon-table');
+      if (isLayoutTable(t)) continue;
+      t.classList.add('neon-table', 'sortable-table');
     }
 
     const hs = collectHeadings(doc, false);
@@ -343,6 +345,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
           </Reorder.Group>
         </article>
         <LinkPreview root={docRef} />
+        <TableSort root={docRef} />
       </div>
 
       {headings.length > 0 && (
