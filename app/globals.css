@@ -59,20 +59,34 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 
 .shell{position:relative;z-index:1;display:grid;grid-template-columns:260px minmax(0,1fr);gap:48px;max-width:1040px;margin:0 auto;padding:0 24px}
 .toc{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:32px 0;font-family:var(--sans);font-size:.9rem}
-.toc nav{display:flex;flex-direction:column;gap:2px}
-.toc-row{position:relative;display:flex;align-items:center;gap:6px;width:100%;padding:6px 0 6px 12px;border:0;border-left:2px solid transparent;background:none;font:inherit;color:var(--muted);text-align:left;text-decoration:none;cursor:pointer;overflow:hidden}
+.toc-nav{display:flex;flex-direction:column;gap:2px}
+.toc-item{position:relative}
+.toc-rowwrap{position:relative}
+.toc-row{position:relative;display:flex;align-items:center;gap:6px;width:100%;padding:6px 22px 6px 12px;border:0;border-left:2px solid transparent;background:none;font:inherit;color:var(--muted);text-align:left;text-decoration:none;cursor:pointer;overflow:hidden;border-radius:0 5px 5px 0}
 .toc-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .toc-row:hover{color:var(--ink)}
 .toc-row[data-active=true]{color:var(--ink);border-left-color:var(--accent);font-weight:600}
 .toc-bar{position:absolute;inset:0;transform-origin:0 50%;background:linear-gradient(90deg,rgba(47,75,255,.10),rgba(47,75,255,.18));pointer-events:none}
 .toc-row[data-active=true] .toc-bar{background:linear-gradient(90deg,rgba(47,75,255,.20),rgba(47,75,255,.32))}
-.toc-chev{flex:none;display:grid;place-items:center;opacity:.55}
+
+/* Drag a row to move its whole section, exactly as in the document. The grip
+   is a separate element so a drag never follows the link underneath it. */
+.toc-grip{position:absolute;right:5px;top:5px;z-index:2;display:grid;place-items:center;width:14px;height:18px;border-radius:4px;color:var(--muted);opacity:0;cursor:grab;touch-action:none;transition:opacity .15s}
+.toc-item:hover>.toc-grip{opacity:1}
+.toc-grip:hover{color:var(--accent)}
+.toc-grip:active{cursor:grabbing}
+.toc-twisty{position:absolute;left:0;top:50%;transform:translateY(-50%);z-index:2;display:grid;place-items:center;width:16px;height:100%;padding:0;border:0;background:none;color:var(--muted);cursor:pointer}
+.toc-twisty:hover{color:var(--accent)}
+.toc-twisty:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.toc-chev{display:grid;place-items:center}
 .toc-children{overflow:hidden}
+.toc-static{cursor:pointer}
 .toc-btn{position:fixed;left:16px;bottom:16px;z-index:21;display:none;align-items:center;gap:8px;padding:10px 16px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-family:var(--sans);font-size:.85rem;box-shadow:0 2px 12px rgba(0,0,0,.12)}
 .toc-scrim{position:fixed;inset:0;z-index:30;background:rgba(12,15,20,.5)}
 .toc-drawer{position:fixed;inset:0 auto 0 0;z-index:31;width:min(300px,84vw);padding:20px;overflow:auto;font-family:var(--sans);font-size:.9rem;background:var(--surface);box-shadow:0 0 40px rgba(0,0,0,.25)}
 .back{all:unset;color:var(--accent);cursor:pointer;margin-bottom:12px}
-.back:focus-visible,.toc-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.back:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.toc-row:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .fname{color:var(--muted);margin:0 0 16px;word-break:break-all}
 
 /* Export: fixed to the top right, beside the theme toggle. A single instance
