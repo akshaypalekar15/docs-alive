@@ -19,6 +19,7 @@
  */
 
 const HEAD_CLASS = 'sortable-head';
+const HEAD_ROW_ATTR = 'data-sort-head';
 const FIXED_ATTR = 'data-sort-fixed';
 /** A run of all-bold rows directly under the header is a sub-header. */
 const MAX_SUBHEADER_ROWS = 2;
@@ -107,11 +108,14 @@ export function prepareSortableTables(root: HTMLElement): HTMLTableElement[] {
     if (headCells.length < 2) continue;
 
     // Pin sub-header rows (e.g. "Q2 | Q3") so they are never sorted as data.
+    // Without a <thead> the header row itself lives in the tbody, so start
+    // scanning after it rather than consuming a pin slot on it.
     const body = table.tBodies[0];
     if (body) {
+      const bodyRows = Array.from(body.querySelectorAll(':scope > tr')) as HTMLTableRowElement[];
+      const scanFrom = bodyRows[0] === headRow ? 1 : 0;
       let pinned = 0;
-      const subRows = Array.from(body.querySelectorAll(':scope > tr')) as HTMLTableRowElement[];
-      for (const row of subRows) {
+      for (const row of bodyRows.slice(scanFrom)) {
         if (pinned >= MAX_SUBHEADER_ROWS) break;
         const cells = contentCells(row);
         if (cells.length === 0) break;
@@ -131,6 +135,9 @@ export function prepareSortableTables(root: HTMLElement): HTMLTableElement[] {
       cell.dataset.sortCol = String(starts[index]);
     });
     headRow.classList.add('sortable-headrow');
+    // Without a <thead> the header row sits inside the tbody, so it has to be
+    // excluded from the sorted set explicitly or it drifts to the bottom.
+    headRow.setAttribute(HEAD_ROW_ATTR, '1');
     prepared.push(table);
   }
 
@@ -141,8 +148,8 @@ export function sortTable(table: HTMLTableElement, column: number): void {
   const body = table.tBodies[0];
   if (!body) return;
 
-  const all = Array.from(body.querySelectorAll(':scope > tr'));
-  const rows = all.filter((r) => !r.hasAttribute(FIXED_ATTR));
+  const all = Array.from(body.querySelectorAll(':scope > tr')) as HTMLTableRowElement[];
+  const rows = all.filter((r) => !r.hasAttribute(FIXED_ATTR) && !r.hasAttribute(HEAD_ROW_ATTR));
   if (rows.length < 2) return;
 
   const directionKey = `data-sort-${column}`;
@@ -164,7 +171,8 @@ export function sortTable(table: HTMLTableElement, column: number): void {
     return a.index - b.index;
   });
 
-  // Appending only the data rows leaves any pinned sub-header rows on top.
+  // Appending only the data rows leaves the header and any pinned sub-header
+  // rows in place at the top.
   for (const { row } of indexed) body.appendChild(row);
   table.setAttribute(directionKey, direction);
   table.dataset.sortColumn = String(column);
