@@ -2,6 +2,25 @@
   "name": "docs-alive",
   "version": "0.1.0",
   "private": true,
+  "description": "Turn any document into an interactive reading experience. Drop in a .docx, .md or .txt file and read it with a table of contents, scroll-spy and scroll-reactive visuals - all client-side.",
+  "license": "MIT",
+  "keywords": [
+    "nextjs",
+    "react",
+    "framer-motion",
+    "document-viewer",
+    "markdown",
+    "docx",
+    "reading-experience"
+  ],
+  "homepage": "https://github.com/akshaypalekar15/docs-alive#readme",
+  "bugs": {
+    "url": "https://github.com/akshaypalekar15/docs-alive/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/akshaypalekar15/docs-alive.git"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
