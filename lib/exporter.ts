@@ -200,8 +200,26 @@ export function toMarkdown(blocks: Block[]): string {
 
 /* --------------------------------- HTML --------------------------------- */
 
-/** Serialises the article as-is, so styling and table order are preserved. */
+/**
+ * Serialises the article as-is, so styling and table order are preserved.
+ *
+ * The clone is sanitised first: blocks fade in as they scroll into view, so
+ * anything still below the fold carries an inline `opacity: 0` and would be
+ * invisible in the exported page. The drag handles are UI, not content.
+ */
 export function toHtmlDocument(root: HTMLElement, title: string): string {
+  const clone = root.cloneNode(true) as HTMLElement;
+
+  clone.querySelectorAll('.sec-handle').forEach((n) => n.remove());
+  clone.querySelectorAll<HTMLElement>('.blk').forEach((n) => {
+    n.style.opacity = '1';
+    n.removeAttribute('data-level');
+  });
+  // Reorder leaves transforms behind while a section settles.
+  clone.querySelectorAll<HTMLElement>('.sec, .sec-body').forEach((n) => {
+    n.style.transform = 'none';
+  });
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -219,7 +237,7 @@ export function toHtmlDocument(root: HTMLElement, title: string): string {
 </style>
 </head>
 <body>
-${root.innerHTML}
+${clone.innerHTML}
 </body>
 </html>
 `;

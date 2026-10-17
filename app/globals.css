@@ -91,6 +91,10 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
   .toc,.toc-btn,.theme,.bg,.progress,.export,.back,.reset-order,.sec-handle,.link-preview{display:none !important}
   .shell{display:block;padding:0;max-width:none}
   .doc{max-width:none;padding:0;background:none;-webkit-backdrop-filter:none;backdrop-filter:none;border-radius:0}
+  /* Blocks that never scrolled into view are still at opacity 0, which would
+     print as blank space. Printing must always include the whole document. */
+  .doc .blk{opacity:1 !important}
+  .sec,.sec-body{transform:none !important}
   body{background:#fff;color:#000}
   .secs{gap:0}
   .doc .blk > p:hover,.doc .blk > ol:hover,.doc .blk > ul:hover{transform:none;background:none}
