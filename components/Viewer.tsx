@@ -3,8 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AnimatePresence,
   MotionConfig,
+  Reorder,
   motion,
   motionValue,
+  useDragControls,
   useScroll,
   useSpring,
   type MotionValue,
@@ -15,10 +17,32 @@ import LinkPreview from '@/components/LinkPreview';
 import ThemeToggle from '@/components/ThemeToggle';
 import TocNav from '@/components/TocNav';
 import { buildTree, rootOf, type Heading } from '@/lib/toc';
-
-type Block = { html: string; level: number };
+import { groupSections, restoreOrder, storageKeyFor, type Block, type Section } from '@/lib/sections';
 
 type Metric = { id: string; top: number; end: number };
+
+/**
+ * A draggable section. Dragging is started from the handle rather than the body
+ * so that selecting and copying text inside a section still works.
+ */
+function DraggableSection({ id, children }: { id: string; children: React.ReactNode }) {
+  const controls = useDragControls();
+
+  return (
+    <Reorder.Item value={id} dragListener={false} dragControls={controls} className="sec">
+      {/* Decorative: keyboard reordering is not implemented, the reset
+          control in the sidebar is the accessible way to undo a change. */}
+      <span className="sec-handle" aria-hidden="true" onPointerDown={(e) => controls.start(e)}>
+        <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+          <circle cx="2.5" cy="2" r="1.4" /><circle cx="7.5" cy="2" r="1.4" />
+          <circle cx="2.5" cy="7" r="1.4" /><circle cx="7.5" cy="7" r="1.4" />
+          <circle cx="2.5" cy="12" r="1.4" /><circle cx="7.5" cy="12" r="1.4" />
+        </svg>
+      </span>
+      <div className="sec-body">{children}</div>
+    </Reorder.Item>
+  );
+}
 
 /**
  * A table with a single row and single cell is a layout wrapper, not data —
@@ -94,12 +118,40 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
 
     const hs = collectHeadings(doc, false);
     const found = hs.length < 2 ? collectHeadings(doc, true) : hs;
-    const bs: Block[] = Array.from(doc.body.children).map((el) => ({
+    const bs: Block[] = Array.from(doc.body.children).map((el, i) => ({
+      id: `b-${i}`,
       html: el.outerHTML,
       level: /^H[1-3]$/.test(el.tagName) ? Number(el.tagName[1]) : 0,
+      text: (el.textContent ?? '').trim(),
     }));
     return { blocks: bs, headings: found };
   }, [html]);
+
+  const sections = useMemo(() => groupSections(blocks), [blocks]);
+  const naturalOrder = useMemo(() => sections.map((s) => s.id), [sections]);
+  const sectionById = useMemo(() => new Map(sections.map((s) => [s.id, s])), [sections]);
+
+  const [order, setOrder] = useState<string[]>(() =>
+    restoreOrder(
+      typeof window === 'undefined' ? null : window.localStorage.getItem(storageKeyFor(html)),
+      sections
+    )
+  );
+  const isReordered = order.some((id, i) => id !== naturalOrder[i]);
+
+  // Save the arrangement so reopening the same file restores it.
+  useEffect(() => {
+    window.localStorage.setItem(storageKeyFor(html), JSON.stringify(order));
+  }, [html, order]);
+
+  const resetOrder = useCallback(() => {
+    setOrder(naturalOrder);
+  }, [naturalOrder]);
+
+  const orderedSections = useMemo(
+    () => order.map((id) => sectionById.get(id)).filter((s): s is Section => s !== undefined),
+    [order, sectionById]
+  );
 
   const tree = useMemo(() => buildTree(headings), [headings]);
   const ancestor = useMemo(() => rootOf(tree), [tree]);
@@ -113,20 +165,26 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   }, [headings]);
 
   const metrics = useRef<Metric[]>([]);
+  const refreshRef = useRef<() => void>(() => {});
 
   const measure = useCallback(() => {
     const y = window.scrollY;
+    // Read every rect before computing so the browser does one layout pass.
+    const rects = headings.map((h) => document.getElementById(h.id)?.getBoundingClientRect() ?? null);
+
     const next: Metric[] = [];
     for (let i = 0; i < headings.length; i++) {
-      const el = document.getElementById(headings[i].id);
-      if (!el) continue;
-      const top = el.getBoundingClientRect().top + y;
-      const nextEl = headings[i + 1] ? document.getElementById(headings[i + 1].id) : null;
-      const end = nextEl
-        ? nextEl.getBoundingClientRect().top + y
-        : document.documentElement.scrollHeight;
+      const rect = rects[i];
+      if (!rect) continue;
+      const top = rect.top + y;
+      const nextRect = rects[i + 1];
+      const end = nextRect ? nextRect.top + y : document.documentElement.scrollHeight;
       next.push({ id: headings[i].id, top, end });
     }
+    // Sort by position: `headings` is in document order at parse time, but the
+    // reader can rearrange sections, and "the last heading above the line" and
+    // each section's span both depend on visual order.
+    next.sort((a, b) => a.top - b.top);
     metrics.current = next;
   }, [headings]);
 
@@ -165,20 +223,25 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     update();
 
     let frame = 0;
-    const onScroll = () => {
-      if (!frame) frame = requestAnimationFrame(() => { frame = 0; update(); });
+    // Re-measure on every scroll tick rather than only on reflow. Layout can
+    // change without the document height changing - reordering sections, or a
+    // swap of two same-height blocks - and a stale offset leaves the scroll-spy
+    // permanently pointing at the wrong heading.
+    const tick = () => {
+      frame = 0;
+      measure();
+      update();
     };
-    // Reflow must re-measure, not just re-evaluate: images decoding or fonts
-    // swapping move every heading after the initial mount measurement, which
-    // would leave the scroll-spy permanently out of sync.
-    const onReflow = () => {
-      if (!frame) frame = requestAnimationFrame(() => { frame = 0; measure(); update(); });
+    const schedule = () => {
+      if (!frame) frame = requestAnimationFrame(tick);
     };
 
-    window.addEventListener('scroll', onScroll, { passive: true });
-    window.addEventListener('resize', onReflow);
-    const ro = new ResizeObserver(onReflow);
+    window.addEventListener('scroll', schedule, { passive: true });
+    window.addEventListener('resize', schedule);
+    const ro = new ResizeObserver(schedule);
     ro.observe(document.body);
+
+    refreshRef.current = schedule;
 
     const hash = window.location.hash.slice(1);
     if (hash) {
@@ -187,12 +250,17 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     }
 
     return () => {
-      window.removeEventListener('scroll', onScroll);
-      window.removeEventListener('resize', onReflow);
+      refreshRef.current = () => {};
+      window.removeEventListener('scroll', schedule);
+      window.removeEventListener('resize', schedule);
       ro.disconnect();
       cancelAnimationFrame(frame);
     };
   }, [measure, update]);
+
+  useEffect(() => {
+    refreshRef.current();
+  }, [order]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDrawerOpen(false);
@@ -230,6 +298,18 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     />
   );
 
+  const header = (
+          <>
+            <button className="back" onClick={onReset}>Upload another</button>
+            <p className="fname">{name}</p>
+            {isReordered && sections.length > 1 && (
+              <button className="reset-order" onClick={resetOrder}>
+                Restore original order
+              </button>
+            )}
+          </>
+        );
+
   return (
     <MotionConfig reducedMotion="user">
       <Background />
@@ -238,23 +318,29 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
 
       <div className="shell">
         <aside className="toc">
-          <button className="back" onClick={onReset}>Upload another</button>
-          <p className="fname">{name}</p>
+          {header}
           {nav}
         </aside>
 
         <article className="doc" ref={docRef}>
-          {blocks.map((b, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0 }}
-              whileInView={{ opacity: 1 }}
-              viewport={{ once: true, margin: '-8% 0px' }}
-              transition={{ duration: 0.5 }}
-              data-level={b.level}
-              dangerouslySetInnerHTML={{ __html: b.html }}
-            />
-          ))}
+          <Reorder.Group axis="y" values={order} onReorder={setOrder} as="div" className="secs">
+            {orderedSections.map((section) => (
+              <DraggableSection key={section.id} id={section.id}>
+                {section.blocks.map((b) => (
+                  <motion.div
+                    key={b.id}
+                    className="blk"
+                    initial={{ opacity: 0 }}
+                    whileInView={{ opacity: 1 }}
+                    viewport={{ once: true, margin: '-8% 0px' }}
+                    transition={{ duration: 0.5 }}
+                    data-level={b.level}
+                    dangerouslySetInnerHTML={{ __html: b.html }}
+                  />
+                ))}
+              </DraggableSection>
+            ))}
+          </Reorder.Group>
         </article>
         <LinkPreview root={docRef} />
       </div>
@@ -295,6 +381,11 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
             >
               <button className="back" onClick={onReset}>Upload another</button>
               <p className="fname">{name}</p>
+              {isReordered && sections.length > 1 && (
+                <button className="reset-order" onClick={resetOrder}>
+                  Restore original order
+                </button>
+              )}
               {nav}
             </motion.div>
           </>

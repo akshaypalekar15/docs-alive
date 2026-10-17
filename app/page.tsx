@@ -32,7 +32,8 @@ export default function Home() {
     }
   }
 
-  if (html) return <Viewer html={html} name={name} onReset={() => setHtml(null)} />;
+  // Keyed so a new document remounts the viewer and loads its own saved order.
+  if (html) return <Viewer key={`${name}:${html.length}`} html={html} name={name} onReset={() => setHtml(null)} />;
 
   return (
     <>
