@@ -18,8 +18,8 @@ Everything runs client-side — files never leave the browser.
 - **Count-up statistics** — figures count up when you hover them, ignoring years, dates, phone numbers and cross-references
 - **Hover lift** — paragraphs and lists tint and scale slightly
 - **Reading progress bar** — spring-smoothed via framer-motion's `useScroll`
-- **Cursor-reactive background** — depth-based parallax blobs, grid, and comet trail
-- **Custom cursor** — dot + trailing ring that reacts to hover and press
+- **Link previews** — hovering an external link shows its image, title and description
+- **Cursor-reactive background** — depth-based parallax blobs, grid, and drifting motes that follow the pointer
 - **Dark mode** — persisted to `localStorage`, no flash on load, respects `prefers-color-scheme`
 - **Accessible by default** — full `prefers-reduced-motion` support, keyboard focus rings, semantic markup
 
@@ -56,10 +56,15 @@ app/
   page.tsx        Upload + conversion
   globals.css     Design tokens and all styling
 components/
-  Viewer.tsx      Document view, TOC, scroll-spy
-  Background.tsx  Cursor-reactive parallax background
-  Cursor.tsx      Custom cursor and trail
-  ThemeToggle.tsx Dark/light toggle
+  Viewer.tsx       Document view, TOC, scroll-spy
+  TocNav.tsx       Accordion table of contents
+  Background.tsx   Cursor-reactive parallax background
+  CountUp.tsx      Hover count-up for statistics
+  LinkPreview.tsx  External link hover cards
+  ThemeToggle.tsx  Dark/light toggle
+lib/
+  toc.ts          Heading tree builder
+  countup.ts      Which numbers count as statistics
 global.d.ts       Ambient module declaration for mammoth
 ```
 

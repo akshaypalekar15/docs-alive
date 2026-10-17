@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { marked } from 'marked';
 import Viewer from '@/components/Viewer';
 import Background from '@/components/Background';
-import Cursor from '@/components/Cursor';
 import ThemeToggle from '@/components/ThemeToggle';
 
 async function toHtml(file: File): Promise<string> {
@@ -38,7 +37,6 @@ export default function Home() {
   return (
     <>
       <Background />
-      <Cursor />
       <ThemeToggle />
       <main className="landing">
         <h1>Upload a document. Read it, don&apos;t scroll it.</h1>

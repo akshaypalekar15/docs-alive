@@ -12,7 +12,6 @@ import {
 import DOMPurify from 'dompurify';
 import Background from '@/components/Background';
 import CountUp from '@/components/CountUp';
-import Cursor from '@/components/Cursor';
 import LinkPreview from '@/components/LinkPreview';
 import ThemeToggle from '@/components/ThemeToggle';
 import TocNav from '@/components/TocNav';
@@ -235,7 +234,6 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   return (
     <MotionConfig reducedMotion="user">
       <Background />
-      <Cursor />
       <ThemeToggle />
       <motion.div className="progress" style={{ scaleX: progress }} />
 
