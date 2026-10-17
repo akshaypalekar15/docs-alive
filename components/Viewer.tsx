@@ -318,7 +318,6 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
         <>
           <button className="back" onClick={onReset}>Upload another</button>
           <p className="fname">{name}</p>
-          <ExportMenu doc={docRef} name={name} altered={isAltered} />
           {isReordered && sections.length > 1 && (
             <button className="reset-order" onClick={resetOrder}>
               Restore original order
@@ -331,6 +330,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     <MotionConfig reducedMotion="user">
       <Background />
       <ThemeToggle />
+      <ExportMenu doc={docRef} name={name} altered={isAltered} />
       <motion.div className="progress" style={{ scaleX: progress }} />
 
       <div className="shell">
@@ -399,7 +399,6 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
             >
               <button className="back" onClick={onReset}>Upload another</button>
               <p className="fname">{name}</p>
-              <ExportMenu doc={docRef} name={name} altered={isAltered} />
               {isReordered && sections.length > 1 && (
                 <button className="reset-order" onClick={resetOrder}>
                   Restore original order
