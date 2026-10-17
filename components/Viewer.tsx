@@ -13,6 +13,7 @@ import {
 } from 'framer-motion';
 import DOMPurify from 'dompurify';
 import Background from '@/components/Background';
+import ExportMenu from '@/components/ExportMenu';
 import LinkPreview from '@/components/LinkPreview';
 import TableSort from '@/components/TableSort';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -147,6 +148,12 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     )
   );
   const isReordered = order.some((id, i) => id !== naturalOrder[i]);
+
+  // A table sort changes the document too, and it is applied straight to the
+  // DOM, so the count is lifted into state purely to flag the export CTA.
+  const [sortedTables, setSortedTables] = useState(0);
+  const onTableSorted = useCallback(() => setSortedTables((n) => n + 1), []);
+  const isAltered = isReordered || sortedTables > 0;
 
   // Save the arrangement so reopening the same file restores it.
   useEffect(() => {
@@ -308,21 +315,22 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   );
 
   const header = (
-          <>
-            <button className="back" onClick={onReset}>Upload another</button>
-            <p className="fname">{name}</p>
-            {isReordered && sections.length > 1 && (
-              <button className="reset-order" onClick={resetOrder}>
-                Restore original order
-              </button>
-            )}
-          </>
-        );
+        <>
+          <button className="back" onClick={onReset}>Upload another</button>
+          <p className="fname">{name}</p>
+          {isReordered && sections.length > 1 && (
+            <button className="reset-order" onClick={resetOrder}>
+              Restore original order
+            </button>
+          )}
+        </>
+      );
 
   return (
     <MotionConfig reducedMotion="user">
       <Background />
       <ThemeToggle />
+      <ExportMenu doc={docRef} name={name} altered={isAltered} />
       <motion.div className="progress" style={{ scaleX: progress }} />
 
       <div className="shell">
@@ -352,7 +360,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
           </Reorder.Group>
         </article>
         <LinkPreview root={docRef} />
-        <TableSort root={docRef} />
+        <TableSort root={docRef} onSort={onTableSorted} />
       </div>
 
       {headings.length > 0 && (
