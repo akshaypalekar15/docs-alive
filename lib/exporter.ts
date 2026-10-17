@@ -62,7 +62,7 @@ function readRuns(node: Node, style: Partial<Run> = {}): Run[] {
 
 const plain = (runs: Run[]) => runs.map((r) => r.text).join('').replace(/\s+/g, ' ').trim();
 
-/** Direct list items only; nested lists are returned separately by collectLists. */
+/** Direct list items only; nested lists are read separately by readElement. */
 function readListItems(list: Element): Run[][] {
   return Array.from(list.children)
     .filter((li) => li.tagName === 'LI')
@@ -73,65 +73,74 @@ function readListItems(list: Element): Run[][] {
     });
 }
 
-/** The list itself, then every nested list, each tagged with its depth. */
-function collectLists(container: Element): { list: Element; depth: number }[] {
-  const out: { list: Element; depth: number }[] = [];
-  const visit = (el: Element, depth: number) => {
-    Array.from(el.children).forEach((child) => {
-      if (child.tagName === 'UL' || child.tagName === 'OL') {
-        out.push({ list: child, depth });
-        Array.from(child.children).forEach((li) => visit(li, depth + 1));
-      } else {
-        visit(child, depth);
-      }
-    });
+function toTableBlock(table: Element): Block {
+  const rows = Array.from(table.querySelectorAll('tr'));
+  const cells = (r: Element) => Array.from(r.children).map((c) => plain(readRuns(c)));
+  return {
+    kind: 'table',
+    header: rows.length ? cells(rows[0]) : [],
+    rows: rows.slice(1).map(cells),
   };
-  visit(container, 0);
-  return out;
+}
+
+function toImageBlock(src: string): Block {
+  return { kind: 'image', dataUri: src };
+}
+
+/** Reads one element into zero or more blocks, preserving document order. */
+function readElement(el: Element, out: Block[]): void {
+  const tag = el.tagName;
+
+  if (/^H[1-6]$/.test(tag)) {
+    out.push({ kind: 'heading', level: Number(tag[1]) || 1, runs: readRuns(el) });
+    return;
+  }
+
+  if (tag === 'TABLE') {
+    out.push(toTableBlock(el));
+    return;
+  }
+
+  if (tag === 'IMG') {
+    const src = el.getAttribute('src');
+    if (src) out.push(toImageBlock(src));
+    return;
+  }
+
+  if (tag === 'UL' || tag === 'OL') {
+    out.push({ kind: 'list', ordered: tag === 'OL', items: readListItems(el), depth: 0 });
+    Array.from(el.children)
+      .filter((li) => li.tagName === 'LI')
+      .forEach((li) => {
+        Array.from(li.children)
+          .filter((c) => c.tagName === 'UL' || c.tagName === 'OL')
+          .forEach((nested) => {
+            out.push({ kind: 'list', ordered: nested.tagName === 'OL', items: readListItems(nested), depth: 1 });
+          });
+      });
+    return;
+  }
+
+  if (tag === 'P' || tag === 'BLOCKQUOTE' || tag === 'FIGCAPTION') {
+    // mammoth wraps images in a paragraph, so pull those out first.
+    Array.from(el.querySelectorAll(':scope img')).forEach((img) => {
+      const src = img.getAttribute('src');
+      if (src) out.push(toImageBlock(src));
+    });
+    const runs = readRuns(el);
+    if (plain(runs) !== '' || runs.some((r) => r.text.includes('\n'))) {
+      out.push({ kind: 'paragraph', runs });
+    }
+  }
 }
 
 export function readBlocks(root: HTMLElement): Block[] {
   const blocks: Block[] = [];
 
+  // A single block can hold several elements - a heading, a note and a table -
+  // so every child is read rather than stopping at the first match.
   root.querySelectorAll('.blk').forEach((el) => {
-    const heading = el.querySelector(
-      ':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6'
-    );
-    if (heading) {
-      blocks.push({ kind: 'heading', level: Number(heading.tagName[1]) || 1, runs: readRuns(heading) });
-      return;
-    }
-
-    const table = el.querySelector(':scope > table');
-    if (table) {
-      const rows = Array.from(table.querySelectorAll('tr'));
-      const cells = (r: Element) => Array.from(r.children).map((c) => plain(readRuns(c)));
-      blocks.push({
-        kind: 'table',
-        header: rows.length ? cells(rows[0]) : [],
-        rows: rows.slice(1).map(cells),
-      });
-      return;
-    }
-
-    // mammoth wraps images in a paragraph, so accept both shapes.
-    const img = el.querySelector(':scope > img, :scope > p > img, :scope > figure > img');
-    if (img) {
-      const src = img.getAttribute('src');
-      if (src) blocks.push({ kind: 'image', dataUri: src });
-      return;
-    }
-
-    const lists = collectLists(el);
-    if (lists.length) {
-      lists.forEach(({ list, depth }) =>
-        blocks.push({ kind: 'list', ordered: list.tagName === 'OL', items: readListItems(list), depth })
-      );
-      return;
-    }
-
-    const para = el.querySelector(':scope > p');
-    if (para) blocks.push({ kind: 'paragraph', runs: readRuns(para) });
+    Array.from(el.children).forEach((child) => readElement(child, blocks));
   });
 
   return blocks;
