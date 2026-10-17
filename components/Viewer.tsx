@@ -46,14 +46,16 @@ function DraggableSection({ id, children }: { id: string; children: React.ReactN
 }
 
 /**
- * A table with a single row and single cell is a layout wrapper, not data —
- * mammoth emits these for things like a resume header block.
+ * A table whose own body is a single row with a single cell is a layout
+ * wrapper, not data — mammoth emits these for resume headers and for wrapping
+ * a nested table. Uses table.rows rather than querySelectorAll('tr'), which is
+ * recursive and would count rows belonging to a table nested inside.
  */
 function isLayoutTable(el: Element): boolean {
   if (el.tagName !== 'TABLE') return false;
-  const rows = el.querySelectorAll('tr');
-  if (rows.length !== 1) return false;
-  return rows[0].querySelectorAll('td, th').length === 1;
+  const table = el as HTMLTableElement;
+  if (table.rows.length !== 1) return false;
+  return table.rows[0].cells.length <= 1;
 }
 
 /** Distance from the top of the viewport that counts as "the current heading". */

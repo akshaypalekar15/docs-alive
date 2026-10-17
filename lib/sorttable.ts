@@ -99,11 +99,14 @@ export function prepareSortableTables(root: HTMLElement): HTMLTableElement[] {
 
   const tables = Array.from(root.querySelectorAll('table.sortable-table')) as HTMLTableElement[];
 
+  // table.rows is this table's own rows. querySelectorAll('tr') is recursive
+  // and would count rows of a table nested inside, making a one-row wrapper
+  // look like a sortable grid.
   for (const table of tables) {
-    const rows = Array.from(table.querySelectorAll('tr'));
-    if (rows.length < 2) continue;
+    const ownRows = Array.from(table.rows);
+    if (ownRows.length < 3) continue; // header plus at least two data rows
 
-    const headRow = rows[0];
+    const headRow = ownRows[0];
     const headCells = contentCells(headRow);
     if (headCells.length < 2) continue;
 
@@ -111,21 +114,24 @@ export function prepareSortableTables(root: HTMLElement): HTMLTableElement[] {
     // Without a <thead> the header row itself lives in the tbody, so start
     // scanning after it rather than consuming a pin slot on it.
     const body = table.tBodies[0];
-    if (body) {
-      const bodyRows = Array.from(body.querySelectorAll(':scope > tr')) as HTMLTableRowElement[];
-      const scanFrom = bodyRows[0] === headRow ? 1 : 0;
-      let pinned = 0;
-      for (const row of bodyRows.slice(scanFrom)) {
-        if (pinned >= MAX_SUBHEADER_ROWS) break;
-        const cells = contentCells(row);
-        if (cells.length === 0) break;
-        const allBold = cells.every(isBoldCell);
-        const allNumeric = cells.every((c) => Number.isFinite(toNumber((c.textContent ?? '').trim())));
-        if (!allBold || allNumeric) break;
-        row.setAttribute(FIXED_ATTR, '1');
-        pinned++;
-      }
+    if (!body) continue;
+    const bodyRows = Array.from(body.rows);
+    const scanFrom = bodyRows[0] === headRow ? 1 : 0;
+    let pinned = 0;
+    for (const row of bodyRows.slice(scanFrom)) {
+      if (pinned >= MAX_SUBHEADER_ROWS) break;
+      const cells = contentCells(row);
+      if (cells.length === 0) break;
+      const allBold = cells.every(isBoldCell);
+      const allNumeric = cells.every((c) => Number.isFinite(toNumber((c.textContent ?? '').trim())));
+      if (!allBold || allNumeric) break;
+      row.setAttribute(FIXED_ATTR, '1');
+      pinned++;
     }
+
+    // Only advertise sorting if there are two or more rows to reorder.
+    const dataRows = bodyRows.filter((r) => r !== headRow && !r.hasAttribute(FIXED_ATTR));
+    if (dataRows.length < 2) continue;
 
     const starts = headerColumnStarts(headCells);
     headCells.forEach((cell, index) => {
@@ -148,7 +154,7 @@ export function sortTable(table: HTMLTableElement, column: number): void {
   const body = table.tBodies[0];
   if (!body) return;
 
-  const all = Array.from(body.querySelectorAll(':scope > tr')) as HTMLTableRowElement[];
+  const all = Array.from(body.rows);
   const rows = all.filter((r) => !r.hasAttribute(FIXED_ATTR) && !r.hasAttribute(HEAD_ROW_ATTR));
   if (rows.length < 2) return;
 
