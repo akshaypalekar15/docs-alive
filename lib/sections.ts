@@ -18,24 +18,48 @@ export type Section = {
 export const LEAD_ID = 's-lead';
 
 /**
- * A section is a heading plus every block up to the next heading, so moving a
- * heading moves its content with it and documents stay coherent.
+ * A heading is a "container" when the next block is another heading: it has no
+ * body of its own, just subsections. "2. Tables" followed straight by "2.1" is
+ * one such heading. Without this, such a heading becomes a title-only section
+ * and dragging it moves nothing but the title.
+ */
+function isContainer(blocks: Block[], index: number): boolean {
+  const next = blocks[index + 1];
+  return next !== undefined && next.level > 0;
+}
+
+/**
+ * A section is a heading plus its content. A container heading absorbs its
+ * subsections and everything under them, so dragging "3. Lists" moves the
+ * bulleted and numbered lists with it. Everything else stands alone until the
+ * next heading.
  */
 export function groupSections(blocks: Block[]): Section[] {
   const sections: Section[] = [];
   let current: Section | null = null;
+  let openLevel = 0;
 
-  for (const block of blocks) {
-    if (block.level > 0) {
-      current = { id: `s-${block.id}`, level: block.level, title: block.text, blocks: [block] };
-      sections.push(current);
-    } else if (current) {
-      current.blocks.push(block);
-    } else {
+  blocks.forEach((block, index) => {
+    if (block.level === 0) {
+      if (current) {
+        current.blocks.push(block);
+        return;
+      }
       current = { id: LEAD_ID, level: 0, title: '', blocks: [block] };
       sections.push(current);
+      return;
     }
-  }
+
+    // A heading nested inside the open container stays with it.
+    if (current && openLevel > 0 && block.level > openLevel) {
+      current.blocks.push(block);
+      return;
+    }
+
+    current = { id: `s-${block.id}`, level: block.level, title: block.text, blocks: [block] };
+    sections.push(current);
+    openLevel = isContainer(blocks, index) ? block.level : 0;
+  });
 
   return sections;
 }

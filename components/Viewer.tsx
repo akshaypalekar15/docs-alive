@@ -120,10 +120,15 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
 
     const hs = collectHeadings(doc, false);
     const found = hs.length < 2 ? collectHeadings(doc, true) : hs;
+
+    // Blocks are tagged with the level of the heading they contain, including
+    // bold-paragraph pseudo-headings, which are <p> and would otherwise never
+    // form a section boundary. collectHeadings has already put an id on each.
+    const levelById = new Map(found.map((h) => [h.id, h.level]));
     const bs: Block[] = Array.from(doc.body.children).map((el, i) => ({
       id: `b-${i}`,
       html: el.outerHTML,
-      level: /^H[1-3]$/.test(el.tagName) ? Number(el.tagName[1]) : 0,
+      level: levelById.get(el.id) ?? 0,
       text: (el.textContent ?? '').trim(),
     }));
     return { blocks: bs, headings: found };
