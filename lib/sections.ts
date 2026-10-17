@@ -5,6 +5,12 @@ export type Block = {
   /** 1-3 for headings, 0 for everything else. */
   level: number;
   text: string;
+  /**
+   * Heading ids contained in this block. Bold-paragraph pseudo-headings are
+   * <p> elements, so level alone cannot identify them; this is what lets the
+   * table of contents be rebuilt in the reader's chosen order.
+   */
+  headingIds: string[];
 };
 
 export type Section = {

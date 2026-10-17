@@ -18,7 +18,7 @@ import LinkPreview from '@/components/LinkPreview';
 import TableSort from '@/components/TableSort';
 import ThemeToggle from '@/components/ThemeToggle';
 import TocNav from '@/components/TocNav';
-import { buildTree, rootOf, type Heading } from '@/lib/toc';
+import { type Heading } from '@/lib/toc';
 import { groupSections, restoreOrder, storageKeyFor, type Block, type Section } from '@/lib/sections';
 
 type Metric = { id: string; top: number; end: number };
@@ -133,6 +133,11 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
       html: el.outerHTML,
       level: levelById.get(el.id) ?? 0,
       text: (el.textContent ?? '').trim(),
+      // Includes headings nested inside the block, such as a heading inside a
+      // table cell, so no heading is ever lost from the outline.
+      headingIds: [el, ...Array.from(el.querySelectorAll('[id]'))]
+        .map((n) => n.id)
+        .filter((id) => levelById.has(id)),
     }));
     return { blocks: bs, headings: found };
   }, [html]);
@@ -169,10 +174,48 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     [order, sectionById]
   );
 
-  const tree = useMemo(() => buildTree(headings), [headings]);
-  const ancestor = useMemo(() => rootOf(tree), [tree]);
+  const headingById = useMemo(() => new Map(headings.map((h) => [h.id, h])), [headings]);
 
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set(tree.length ? [tree[0].id] : []));
+  // The outline follows the reader's arrangement, not the parse order, so the
+  // contents and the document can never disagree.
+  const outline = useMemo(() => {
+    const out: (Heading & { sectionId: string })[] = [];
+    for (const section of orderedSections) {
+      for (const block of section.blocks) {
+        for (const id of block.headingIds) {
+          const heading = headingById.get(id);
+          if (heading) out.push({ ...heading, sectionId: section.id });
+        }
+      }
+    }
+    return out;
+  }, [orderedSections, headingById]);
+
+  // Headings grouped by the section they belong to, for the draggable outline.
+  const rowsBySection = useMemo(() => {
+    const map = new Map<string, (Heading & { sectionId: string })[]>();
+    for (const row of outline) {
+      const list = map.get(row.sectionId);
+      if (list) list.push(row);
+      else map.set(row.sectionId, [row]);
+    }
+    return map;
+  }, [outline]);
+
+  // The outline is keyed by section, so the accordion and auto-expand track
+  // section ids rather than heading ids.
+  const sectionOfHeading = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const row of outline) map.set(row.id, row.sectionId);
+    return map;
+  }, [outline]);
+
+  const hasOutline = outline.length > 0;
+
+  const [expanded, setExpanded] = useState<Set<string>>(() => {
+    const first = orderedSections.find((s) => (rowsBySection.get(s.id)?.length ?? 0) > 1);
+    return new Set(first ? [first.id] : []);
+  });
 
   const fills = useMemo(() => {
     const map = new Map<string, MotionValue<number>>();
@@ -185,24 +228,23 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
 
   const measure = useCallback(() => {
     const y = window.scrollY;
-    // Read every rect before computing so the browser does one layout pass.
-    const rects = headings.map((h) => document.getElementById(h.id)?.getBoundingClientRect() ?? null);
+    const items: Metric[] = [];
 
-    const next: Metric[] = [];
-    for (let i = 0; i < headings.length; i++) {
-      const rect = rects[i];
-      if (!rect) continue;
-      const top = rect.top + y;
-      const nextRect = rects[i + 1];
-      const end = nextRect ? nextRect.top + y : document.documentElement.scrollHeight;
-      next.push({ id: headings[i].id, top, end });
+    for (const h of outline) {
+      const el = document.getElementById(h.id);
+      if (!el) continue;
+      items.push({ id: h.id, top: el.getBoundingClientRect().top + y, end: 0 });
     }
-    // Sort by position: `headings` is in document order at parse time, but the
-    // reader can rearrange sections, and "the last heading above the line" and
-    // each section's span both depend on visual order.
-    next.sort((a, b) => a.top - b.top);
-    metrics.current = next;
-  }, [headings]);
+
+    // Sort by position before pairing sections, so each heading's span ends at
+    // the next one visually. The reader can rearrange sections, so relying on
+    // array order here produced wildly wrong progress bars.
+    items.sort((a, b) => a.top - b.top);
+    for (let i = 0; i < items.length; i++) {
+      items[i].end = i + 1 < items.length ? items[i + 1].top : document.documentElement.scrollHeight;
+    }
+    metrics.current = items;
+  }, [outline]);
 
   const update = useCallback(() => {
     const m = metrics.current;
@@ -230,9 +272,9 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     setActive((prev) => (prev === current ? prev : current));
 
     // Auto-open the group containing whatever section is being read.
-    const root = ancestor[current];
-    if (root) setExpanded((prev) => (prev.has(root) ? prev : new Set(prev).add(root)));
-  }, [fills, ancestor]);
+    const section = sectionOfHeading.get(current);
+    if (section) setExpanded((prev) => (prev.has(section) ? prev : new Set(prev).add(section)));
+  }, [fills, sectionOfHeading]);
 
   useEffect(() => {
     measure();
@@ -305,11 +347,13 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
 
   const nav = (
     <TocNav
-      nodes={tree}
+      sections={orderedSections}
+      rowsBySection={rowsBySection}
       active={active}
       expanded={expanded}
       progress={fills}
       onToggle={onToggle}
+      onReorder={setOrder}
       onNavigate={onNavigate}
     />
   );
@@ -363,7 +407,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
         <TableSort root={docRef} onSort={onTableSorted} />
       </div>
 
-      {headings.length > 0 && (
+      {hasOutline && (
         <motion.button
           className="toc-btn"
           onClick={() => setDrawerOpen(true)}
