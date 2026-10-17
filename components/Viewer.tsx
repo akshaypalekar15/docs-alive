@@ -11,7 +11,6 @@ import {
 } from 'framer-motion';
 import DOMPurify from 'dompurify';
 import Background from '@/components/Background';
-import CountUp from '@/components/CountUp';
 import LinkPreview from '@/components/LinkPreview';
 import ThemeToggle from '@/components/ThemeToggle';
 import TocNav from '@/components/TocNav';
@@ -256,7 +255,6 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
               dangerouslySetInnerHTML={{ __html: b.html }}
             />
           ))}
-          <CountUp root={docRef} token={html} />
         </article>
         <LinkPreview root={docRef} />
       </div>

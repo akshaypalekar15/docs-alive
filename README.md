@@ -15,7 +15,6 @@ Everything runs client-side — files never leave the browser.
 - **Sanitized output** — everything is run through [DOMPurify](https://github.com/cure53/DOMPurify) before rendering
 - **Table of contents** — an accordion built from H1–H3, with scroll-spy and per-section progress; falls back to treating bold paragraphs as headings, since most `.docx` files fake headings with bold text
 - **Neon tables** — real data tables get a pulsing glow; single-cell layout wrappers are left alone
-- **Count-up statistics** — figures count up when you hover them, ignoring years, dates, phone numbers and cross-references
 - **Hover lift** — paragraphs and lists tint and scale slightly
 - **Reading progress bar** — spring-smoothed via framer-motion's `useScroll`
 - **Link previews** — hovering an external link shows its image, title and description
@@ -59,12 +58,10 @@ components/
   Viewer.tsx       Document view, TOC, scroll-spy
   TocNav.tsx       Accordion table of contents
   Background.tsx   Cursor-reactive parallax background
-  CountUp.tsx      Hover count-up for statistics
   LinkPreview.tsx  External link hover cards
   ThemeToggle.tsx  Dark/light toggle
 lib/
   toc.ts          Heading tree builder
-  countup.ts      Which numbers count as statistics
 global.d.ts       Ambient module declaration for mammoth
 ```
 
