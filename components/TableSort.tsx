@@ -2,9 +2,13 @@
 import { useEffect, type RefObject } from 'react';
 import { prepareSortableTables, sortTable } from '@/lib/sorttable';
 
-type Props = { root: RefObject<HTMLElement | null> };
+type Props = {
+  root: RefObject<HTMLElement | null>;
+  /** Fired after a table is actually reordered, so the UI can flag a change. */
+  onSort?: () => void;
+};
 
-export default function TableSort({ root }: Props) {
+export default function TableSort({ root, onSort }: Props) {
   useEffect(() => {
     const el = root.current;
     if (!el) return;
@@ -18,6 +22,7 @@ export default function TableSort({ root }: Props) {
       const table = head.closest('table');
       if (!table) return;
       sortTable(table as HTMLTableElement, Number(head.dataset.sortCol));
+      onSort?.();
     };
 
     const onClick = (e: MouseEvent) => activate(e.target);
@@ -36,7 +41,7 @@ export default function TableSort({ root }: Props) {
       el.removeEventListener('click', onClick);
       el.removeEventListener('keydown', onKeyDown);
     };
-  }, [root]);
+  }, [root, onSort]);
 
   return null;
 }
