@@ -57,7 +57,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 .drop:hover,.drop:focus-within{border-color:var(--accent);color:var(--accent)}
 .error{font-family:var(--sans);color:var(--error)}
 
-.shell{position:relative;z-index:1;display:grid;grid-template-columns:260px minmax(0,1fr);gap:48px;max-width:1040px;margin:0 auto;padding:0 24px}
+.shell{position:relative;z-index:1;display:grid;grid-template-columns:260px minmax(0,1fr);gap:48px;max-width:1160px;margin:0 auto;padding:0 24px}
 .toc{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:32px 0;font-family:var(--sans);font-size:.9rem}
 .toc-nav{display:flex;flex-direction:column;gap:2px}
 .toc-item{position:relative}
@@ -71,7 +71,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 
 /* Drag a row to move its whole section, exactly as in the document. The grip
    is a separate element so a drag never follows the link underneath it. */
-.toc-grip{position:absolute;right:5px;top:5px;z-index:2;display:grid;place-items:center;width:14px;height:18px;border-radius:4px;color:var(--muted);opacity:0;cursor:grab;touch-action:none;transition:opacity .15s}
+.toc-grip{position:absolute;right:5px;top:5px;z-index:2;display:grid;place-items:center;width:14px;height:18px;border-radius:4px;color:var(--muted);opacity:0;cursor:grab;touch-action:none;user-select:none;transition:opacity .15s}
 .toc-item:hover>.toc-grip{opacity:1}
 .toc-grip:hover{color:var(--accent)}
 .toc-grip:active{cursor:grabbing}
@@ -124,7 +124,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
    can be scrolled past the activation line. With less trailing space, headings
    near the end of a document sit inside the final viewport and can never
    become the active item, because maxScroll is too small to reach them. */
-.doc{max-width:68ch;padding:64px 40px 100vh;font-size:1.1rem;line-height:1.75;background:var(--doc-bg);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border-radius:8px;transition:background-color .35s ease}
+.doc{max-width:84ch;padding:64px 40px 100vh;font-size:1.1rem;line-height:1.75;background:var(--doc-bg);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border-radius:8px;transition:background-color .35s ease}
 @media (max-width:820px){.doc{padding:48px 20px 100vh}}
 .doc h1,.doc h2,.doc h3{font-family:var(--sans);line-height:1.2;margin:2.2em 0 .6em;scroll-margin-top:24px}
 .doc h1{font-size:2.2rem}.doc h2{font-size:1.6rem}.doc h3{font-size:1.25rem}
@@ -175,10 +175,26 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 .secs{display:flex;flex-direction:column}
 .sec{position:relative}
 .sec-body{position:relative}
-.sec-handle{position:absolute;left:-26px;top:2px;display:grid;place-items:center;width:20px;height:22px;border-radius:5px;color:var(--muted);opacity:0;cursor:grab;touch-action:none;transition:opacity .18s ease,color .18s ease}
+.sec-handle{position:absolute;left:-26px;top:2px;display:grid;place-items:center;width:20px;height:22px;border-radius:5px;color:var(--muted);opacity:0;cursor:grab;touch-action:none;user-select:none;transition:opacity .18s ease,color .18s ease}
 .sec:hover>.sec-handle,.sec-handle:focus-visible{opacity:1}
 .sec-handle:hover{color:var(--accent)}
 .sec-handle:active{cursor:grabbing}
+
+/* A drag sweeps across text, and the browser starts highlighting the moment the
+   pointer does. Selection is off for the duration of the drag and the range is
+   cleared afterwards, so nothing is left highlighted. Selecting text normally,
+   outside a drag, is untouched. */
+html.is-dragging,html.is-dragging *{user-select:none !important}
+/* Double-click a section to edit its text in place */
+.sec[data-editing=true] .sec-body{padding:4px 8px;margin:-4px -8px;border-radius:8px;background:var(--neon-bg);box-shadow:0 0 0 1px var(--neon-soft)}
+.sec-editor{display:block;width:100%;min-height:8em;border:0;padding:0;background:none;color:var(--ink);font:inherit;line-height:inherit;resize:none;overflow:hidden}
+.sec-editor:focus{outline:none}
+/* The cell field is a plain single-line input sitting exactly over the cell it
+   replaces, so the table never reflows while a value is being typed. */
+.cell-pop{position:fixed;z-index:60;box-sizing:border-box}
+.cell-editor{display:block;width:100%;height:100%;box-sizing:border-box;border:1px solid var(--accent);border-radius:4px;padding:2px 6px;background:var(--surface);color:var(--ink);font:inherit;line-height:inherit;box-shadow:0 2px 10px rgb(0 0 0 / .18)}
+.cell-editor:focus{outline:none}
+
 @media (prefers-reduced-motion:reduce){.sec-handle{transition:none}}
 @media (max-width:820px){.sec-handle{left:-19px;width:14px}}
 @media (max-width:820px){.shell{grid-template-columns:1fr}.toc{display:none}.toc-btn{display:flex}}

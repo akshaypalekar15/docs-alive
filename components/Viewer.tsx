@@ -15,32 +15,108 @@ import DOMPurify from 'dompurify';
 import Background from '@/components/Background';
 import ExportMenu from '@/components/ExportMenu';
 import LinkPreview from '@/components/LinkPreview';
+import SectionEditor from '@/components/SectionEditor';
 import TableSort from '@/components/TableSort';
 import ThemeToggle from '@/components/ThemeToggle';
 import TocNav from '@/components/TocNav';
 import { type Heading } from '@/lib/toc';
 import { groupSections, restoreOrder, storageKeyFor, type Block, type Section } from '@/lib/sections';
+import { sectionToText, textToBlocks } from '@/lib/sectionText';
+import { prepareSortableTables } from '@/lib/sorttable';
+import { useDragSelectionGuard } from '@/lib/useDragSelectionGuard';
 
 type Metric = { id: string; top: number; end: number };
+
+/** Identity of a cell, as a child-index path from the block that contains it. */
+function cellPath(td: Element, root: Element): number[] {
+  const path: number[] = [];
+  let node: Element | null = td;
+  while (node && node !== root) {
+    const parent: Element | null = node.parentElement;
+    if (!parent) return [];
+    path.unshift(Array.prototype.indexOf.call(parent.children, node));
+    node = parent;
+  }
+  return node === root ? path : [];
+}
+
+const cellKey = (blockId: string, path: number[]) => `${blockId}|${path.join('.')}`;
+
+/**
+ * The cell under a double-click, if it is one the reader is allowed to change.
+ * Header cells are excluded: they are sortable, and a rewritten header would
+ * silently break the column alignment the sort depends on.
+ */
+function editableCell(target: HTMLElement): {
+  td: HTMLTableCellElement;
+  blockId: string;
+  path: number[];
+  text: string;
+} | null {
+  const td = target.closest('td');
+  if (!td || !td.closest('table')) return null;
+  if (td.closest('thead, .sortable-head, .sortable-headrow, .sec-handle')) return null;
+  const root = target.closest<HTMLElement>('[data-block-id]');
+  const blockId = root?.dataset.blockId;
+  if (!root || !blockId) return null;
+  const path = cellPath(td, root);
+  if (path.length === 0) return null;
+  return { td, blockId, path, text: (td.textContent ?? '').trim() };
+}
 
 /**
  * A draggable section. Dragging is started from the handle rather than the body
  * so that selecting and copying text inside a section still works.
  */
-function DraggableSection({ id, children }: { id: string; children: React.ReactNode }) {
+function DraggableSection({
+  id,
+  editing,
+  onRequestEdit,
+  children,
+}: {
+  id: string;
+  editing: boolean;
+  onRequestEdit: (target: HTMLElement) => void;
+  children: React.ReactNode;
+}) {
   const controls = useDragControls();
+  const dragGuard = useDragSelectionGuard();
+
+  const startEdit = (e: React.MouseEvent) => {
+    // Only a plain double-click on the section itself, never on a control.
+    if (e.defaultPrevented) return;
+    const target = e.target as HTMLElement;
+    if (target.closest('a, button, input, textarea, .sortable-head, .sec-handle, img')) return;
+    onRequestEdit(target);
+  };
 
   return (
-    <Reorder.Item value={id} dragListener={false} dragControls={controls} className="sec">
+    <Reorder.Item
+      value={id}
+      dragListener={false}
+      dragControls={controls}
+      className="sec"
+      data-editing={editing}
+      onDoubleClick={startEdit}
+    >
       {/* Decorative: keyboard reordering is not implemented, the reset
           control in the sidebar is the accessible way to undo a change. */}
-      <span className="sec-handle" aria-hidden="true" onPointerDown={(e) => controls.start(e)}>
-        <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
-          <circle cx="2.5" cy="2" r="1.4" /><circle cx="7.5" cy="2" r="1.4" />
-          <circle cx="2.5" cy="7" r="1.4" /><circle cx="7.5" cy="7" r="1.4" />
-          <circle cx="2.5" cy="12" r="1.4" /><circle cx="7.5" cy="12" r="1.4" />
-        </svg>
-      </span>
+      {!editing && (
+        <span
+          className="sec-handle"
+          aria-hidden="true"
+          onPointerDown={(e) => {
+            dragGuard.onDragHandlePointerDown();
+            controls.start(e);
+          }}
+        >
+          <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor">
+            <circle cx="2.5" cy="2" r="1.4" /><circle cx="7.5" cy="2" r="1.4" />
+            <circle cx="2.5" cy="7" r="1.4" /><circle cx="7.5" cy="7" r="1.4" />
+            <circle cx="2.5" cy="12" r="1.4" /><circle cx="7.5" cy="12" r="1.4" />
+          </svg>
+        </span>
+      )}
       <div className="sec-body">{children}</div>
     </Reorder.Item>
   );
@@ -116,9 +192,11 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   const { blocks, headings } = useMemo(() => {
     const doc = new DOMParser().parseFromString(DOMPurify.sanitize(html), 'text/html');
 
+    const dataTables = new Set<Element>();
     for (const t of Array.from(doc.querySelectorAll('table'))) {
       if (isLayoutTable(t)) continue;
       t.classList.add('neon-table', 'sortable-table');
+      dataTables.add(t);
     }
 
     const hs = collectHeadings(doc, false);
@@ -133,6 +211,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
       html: el.outerHTML,
       level: levelById.get(el.id) ?? 0,
       text: (el.textContent ?? '').trim(),
+      preserved: dataTables.has(el) || /<img[\s>]/i.test(el.outerHTML),
       // Includes headings nested inside the block, such as a heading inside a
       // table cell, so no heading is ever lost from the outline.
       headingIds: [el, ...Array.from(el.querySelectorAll('[id]'))]
@@ -158,7 +237,75 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   // DOM, so the count is lifted into state purely to flag the export CTA.
   const [sortedTables, setSortedTables] = useState(0);
   const onTableSorted = useCallback(() => setSortedTables((n) => n + 1), []);
-  const isAltered = isReordered || sortedTables > 0;
+
+  // Section edits are session-only: uploading the file again starts fresh.
+  const [edits, setEdits] = useState<Map<string, Block[]>>(() => new Map());
+  const [editingSection, setEditingSection] = useState<{ id: string; text: string } | null>(null);
+
+  const beginEdit = useCallback((section: Section, blocks: Block[]) => {
+    setEditingSection({ id: section.id, text: sectionToText({ ...section, blocks }) });
+  }, []);
+
+  // A cell edit is applied to the block's HTML rather than to the DOM directly,
+  // so the cell keeps its spans, widths and nested content and React stays the
+  // single owner of that markup.
+  const [cellEdits, setCellEdits] = useState<Map<string, string>>(() => new Map());
+  const [editingCell, setEditingCell] = useState<{ blockId: string; path: number[]; text: string } | null>(null);
+  const [cellBox, setCellBox] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const cellTarget = useRef<HTMLTableCellElement | null>(null);
+
+  const measureCell = useCallback(() => {
+    const td = cellTarget.current;
+    if (!td) return;
+    const r = td.getBoundingClientRect();
+    setCellBox({ left: r.left, top: r.top, width: r.width, height: r.height });
+  }, []);
+
+  useEffect(() => {
+    if (!editingCell) return;
+    measureCell();
+    window.addEventListener('scroll', measureCell, true);
+    window.addEventListener('resize', measureCell);
+    return () => {
+      window.removeEventListener('scroll', measureCell, true);
+      window.removeEventListener('resize', measureCell);
+    };
+  }, [editingCell, measureCell]);
+
+  const closeCellEditor = useCallback(() => {
+    cellTarget.current = null;
+    setEditingCell(null);
+    setCellBox(null);
+  }, []);
+
+  // Re-rendering a block to apply an edit replaces that block's markup, which
+  // drops the attributes the sorter attached to its header cells. Re-preparing
+  // is idempotent, so the table simply becomes sortable again.
+  useEffect(() => {
+    if (cellEdits.size === 0 && edits.size === 0) return;
+    const el = docRef.current;
+    if (el) prepareSortableTables(el);
+  }, [cellEdits, edits]);
+
+  const renderBlockHtml = useCallback(
+    (block: Block): string => {
+      const prefix = `${block.id}|`;
+      const entries = [...cellEdits].filter(([key]) => key.startsWith(prefix));
+      if (entries.length === 0) return block.html;
+      const doc = new DOMParser().parseFromString(`<div>${block.html}</div>`, 'text/html');
+      const root = doc.body.firstElementChild;
+      if (!root) return block.html;
+      for (const [key, text] of entries) {
+        let node: Element | null = root;
+        for (const step of key.slice(prefix.length).split('.')) node = node?.children[Number(step)] ?? null;
+        if (node) node.textContent = text;
+      }
+      return root.innerHTML;
+    },
+    [cellEdits]
+  );
+
+  const isAltered = isReordered || sortedTables > 0 || edits.size > 0 || cellEdits.size > 0;
 
   // Save the arrangement so reopening the same file restores it.
   useEffect(() => {
@@ -181,15 +328,19 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   const outline = useMemo(() => {
     const out: (Heading & { sectionId: string })[] = [];
     for (const section of orderedSections) {
-      for (const block of section.blocks) {
+      const blocks = edits.get(section.id) ?? section.blocks;
+      for (const block of blocks) {
         for (const id of block.headingIds) {
           const heading = headingById.get(id);
-          if (heading) out.push({ ...heading, sectionId: section.id });
+          if (!heading) continue;
+          // Prefer the block's own text so an edited heading shows in the outline.
+          const text = block.headingIds.length === 1 ? block.text : heading.text;
+          out.push({ ...heading, text, sectionId: section.id });
         }
       }
     }
     return out;
-  }, [orderedSections, headingById]);
+  }, [orderedSections, headingById, edits]);
 
   // Headings grouped by the section they belong to, for the draggable outline.
   const rowsBySection = useMemo(() => {
@@ -384,27 +535,84 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
         </aside>
 
         <article className="doc" ref={docRef}>
-          <Reorder.Group axis="y" values={order} onReorder={setOrder} as="div" className="secs">
-            {orderedSections.map((section) => (
-              <DraggableSection key={section.id} id={section.id}>
-                {section.blocks.map((b) => (
-                  <motion.div
-                    key={b.id}
-                    className="blk"
-                    initial={{ opacity: 0 }}
-                    whileInView={{ opacity: 1 }}
-                    viewport={{ once: true, margin: '-8% 0px' }}
-                    transition={{ duration: 0.5 }}
-                    data-level={b.level}
-                    dangerouslySetInnerHTML={{ __html: b.html }}
-                  />
-                ))}
-              </DraggableSection>
-            ))}
+          <Reorder.Group
+            axis="y"
+            values={order}
+            onReorder={setOrder}
+            as="div"
+            className="secs"
+          >
+            {orderedSections.map((section) => {
+              const blocks = edits.get(section.id) ?? section.blocks;
+              const editing = editingSection?.id === section.id;
+              return (
+                <DraggableSection
+                  key={section.id}
+                  id={section.id}
+                  editing={editing}
+                  onRequestEdit={(target) => {
+                    const cell = editableCell(target);
+                    if (cell) {
+                      cellTarget.current = cell.td;
+                      setEditingCell({ blockId: cell.blockId, path: cell.path, text: cell.text });
+                      return;
+                    }
+                    beginEdit(section, blocks);
+                  }}
+                >
+                  {editing ? (
+                    <SectionEditor
+                      label="Edit this section's text"
+                      initial={editingSection.text}
+                      onCancel={() => setEditingSection(null)}
+                      onSave={(text) => {
+                        setEdits((prev) => new Map(prev).set(section.id, textToBlocks({ ...section, blocks }, text)));
+                        setEditingSection(null);
+                      }}
+                    />
+                  ) : (
+                    blocks.map((b) => (
+                      <motion.div
+                        key={b.id}
+                        className="blk"
+                        initial={{ opacity: 0 }}
+                        whileInView={{ opacity: 1 }}
+                        viewport={{ once: true, margin: '-8% 0px' }}
+                        transition={{ duration: 0.5 }}
+                        data-level={b.level}
+                        data-block-id={b.id}
+                        dangerouslySetInnerHTML={{ __html: renderBlockHtml(b) }}
+                      />
+                    ))
+                  )}
+                </DraggableSection>
+              );
+            })}
           </Reorder.Group>
         </article>
         <LinkPreview root={docRef} />
         <TableSort root={docRef} onSort={onTableSorted} />
+
+        {editingCell && cellBox && (
+          <div
+            className="cell-pop"
+            style={{ left: cellBox.left, top: cellBox.top, width: cellBox.width, minHeight: cellBox.height }}
+          >
+            <SectionEditor
+              multiline={false}
+              className="cell-editor"
+              label="Edit this table cell"
+              initial={editingCell.text}
+              onCancel={closeCellEditor}
+              onSave={(text) => {
+                setCellEdits((prev) =>
+                  new Map(prev).set(cellKey(editingCell.blockId, editingCell.path), text)
+                );
+                closeCellEditor();
+              }}
+            />
+          </div>
+        )}
       </div>
 
       {hasOutline && (

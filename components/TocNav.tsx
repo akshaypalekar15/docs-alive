@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { AnimatePresence, Reorder, motion, useDragControls, type MotionValue } from 'framer-motion';
 import type { Heading } from '@/lib/toc';
 import type { Section } from '@/lib/sections';
+import { useDragSelectionGuard } from '@/lib/useDragSelectionGuard';
 
 type OutlineRow = Heading & { sectionId: string };
 
@@ -88,6 +89,7 @@ function TocSection({
   rows: OutlineRow[];
 }) {
   const controls = useDragControls();
+  const dragGuard = useDragSelectionGuard();
   const [lead, ...rest] = rows;
   if (!lead) return null;
 
@@ -106,7 +108,10 @@ function TocSection({
       <span
         className="toc-grip"
         aria-hidden="true"
-        onPointerDown={(e) => controls.start(e)}
+        onPointerDown={(e) => {
+          dragGuard.onDragHandlePointerDown();
+          controls.start(e);
+        }}
       >
         <svg width="9" height="12" viewBox="0 0 10 14" fill="currentColor">
           <circle cx="2.5" cy="2" r="1.4" /><circle cx="7.5" cy="2" r="1.4" />
@@ -190,7 +195,13 @@ export default function TocNav({
   if (draggable.length === 0) return null;
 
   return (
-    <Reorder.Group axis="y" values={values} onReorder={onReorder} as="nav" className="toc-nav">
+    <Reorder.Group
+      axis="y"
+      values={values}
+      onReorder={onReorder}
+      as="nav"
+      className="toc-nav"
+    >
       {draggable.map((section) => (
         <TocSection
           key={section.id}

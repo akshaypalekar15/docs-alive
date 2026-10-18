@@ -11,6 +11,15 @@ export type Block = {
    * table of contents be rebuilt in the reader's chosen order.
    */
   headingIds: string[];
+  /**
+   * True for blocks that plain-text editing must not touch: data tables and
+   * image blocks. Both are destroyed by a round-trip through text — a table
+   * collapses into pipe-separated rows, an image into a placeholder — so the
+   * editor leaves them alone and puts them back exactly where they were. A
+   * layout table is not flagged: it only wraps prose, so that prose stays
+   * editable.
+   */
+  preserved?: boolean;
 };
 
 export type Section = {
