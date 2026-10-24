@@ -211,6 +211,11 @@ export function toHtmlDocument(root: HTMLElement, title: string): string {
   const clone = root.cloneNode(true) as HTMLElement;
 
   clone.querySelectorAll('.sec-handle').forEach((n) => n.remove());
+  // Focus mode is a reading state, not document content.
+  clone.querySelectorAll<HTMLElement>('.sec').forEach((n) => {
+    n.removeAttribute('data-hidden');
+    n.removeAttribute('data-editing');
+  });
   clone.querySelectorAll<HTMLElement>('.blk').forEach((n) => {
     n.style.opacity = '1';
     n.removeAttribute('data-level');
