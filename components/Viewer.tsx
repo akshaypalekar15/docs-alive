@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   AnimatePresence,
   MotionConfig,
@@ -21,9 +21,7 @@ import ThemeToggle from '@/components/ThemeToggle';
 import TocNav from '@/components/TocNav';
 import { type Heading } from '@/lib/toc';
 import {
-  foldKeyFor,
   groupSections,
-  restoreFolds,
   restoreOrder,
   storageKeyFor,
   type Block,
@@ -75,34 +73,19 @@ function editableCell(target: HTMLElement): {
 /**
  * A draggable section. Dragging is started from the handle rather than the body
  * so that selecting and copying text inside a section still works.
- *
- * Folding keeps the leading heading on screen and hides only the blocks after
- * it, so a folded section still reads as itself in the document. Nothing is
- * unmounted while folded: the exporter reads the live article, so a section
- * removed from the DOM would silently vanish from every export.
  */
 function DraggableSection({
   id,
-  title,
   editing,
-  folded,
   hidden,
-  canFold,
-  onToggleFold,
   onRequestEdit,
   children,
-  rest,
 }: {
   id: string;
-  title: string;
   editing: boolean;
-  folded: boolean;
   hidden: boolean;
-  canFold: boolean;
-  onToggleFold: () => void;
   onRequestEdit: (target: HTMLElement) => void;
   children: React.ReactNode;
-  rest: React.ReactNode;
 }) {
   const controls = useDragControls();
   const dragGuard = useDragSelectionGuard();
@@ -122,7 +105,6 @@ function DraggableSection({
       dragControls={controls}
       className="sec"
       data-editing={editing}
-      data-collapsed={folded ? 'true' : undefined}
       data-hidden={hidden ? 'true' : undefined}
       onDoubleClick={startEdit}
     >
@@ -144,23 +126,7 @@ function DraggableSection({
           </svg>
         </span>
       )}
-      {!editing && canFold && (
-        <button
-          className="sec-toggle"
-          aria-expanded={!folded}
-          aria-label={folded ? `Expand ${title}` : `Collapse ${title}`}
-          title={folded ? 'Expand section' : 'Collapse section'}
-          onClick={onToggleFold}
-        >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        </button>
-      )}
-      <div className="sec-body">
-        {children}
-        {rest}
-      </div>
+      <div className="sec-body">{children}</div>
     </Reorder.Item>
   );
 }
@@ -276,17 +242,8 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   );
   const isReordered = order.some((id, i) => id !== naturalOrder[i]);
 
-  // Which sections the reader has folded away, remembered per document. The
-  // content itself is hidden with CSS rather than removed: see DraggableSection.
-  const [collapsed, setCollapsed] = useState<Set<string>>(() =>
-    restoreFolds(
-      typeof window === 'undefined' ? null : window.localStorage.getItem(foldKeyFor(html)),
-      sections
-    )
-  );
-
-  // Focus mode is a way of reading, not a property of the document, so unlike
-  // the order and the folds it is deliberately not persisted.
+  // Focus mode is a way of reading, not a property of the document, so it is
+  // deliberately not persisted.
   const [focus, setFocus] = useState<string | null>(null);
 
   // A table sort changes the document too, and it is applied straight to the
@@ -363,14 +320,10 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
 
   const isAltered = isReordered || sortedTables > 0 || edits.size > 0 || cellEdits.size > 0;
 
-  // Save the arrangement and the folds so reopening the same file restores them.
+  // Save the arrangement so reopening the same file restores it.
   useEffect(() => {
     window.localStorage.setItem(storageKeyFor(html), JSON.stringify(order));
   }, [html, order]);
-
-  useEffect(() => {
-    window.localStorage.setItem(foldKeyFor(html), JSON.stringify([...collapsed]));
-  }, [html, collapsed]);
 
   const resetOrder = useCallback(() => {
     setOrder(naturalOrder);
@@ -385,14 +338,6 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   // section is the content before the first heading and has no title to show.
   const focusable = useMemo(() => orderedSections.filter((s) => s.level > 0), [orderedSections]);
   const focusIndex = focus ? focusable.findIndex((s) => s.id === focus) : -1;
-
-  const folded = useMemo(
-    () =>
-      focus
-        ? new Set(orderedSections.map((s) => s.id).filter((id) => id !== focus))
-        : collapsed,
-    [focus, orderedSections, collapsed]
-  );
 
   const headingById = useMemo(() => new Map(headings.map((h) => [h.id, h])), [headings]);
 
@@ -436,15 +381,6 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
 
   const hasOutline = outline.length > 0;
 
-  const toggleFold = useCallback((id: string) => {
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
   const scrollToHeading = useCallback((id: string, behavior: ScrollBehavior = 'smooth') => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -455,21 +391,68 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
   }, []);
 
   /**
-   * Make one section the only expanded one, and go to its heading. The saved
-   * folds are left alone: focus overrides them while it is on, so it stays a
-   * reading state and exiting it returns the document exactly as it was.
+   * Make one section the only one on screen and jump to the top of the
+   * document. Nothing is measured: a heading that is about to swap in has no
+   * reliable position yet, and measuring it gave a target from the previous
+   * layout, which overshot and left the heading above the viewport. Every
+   * other section is hidden, so the document top always puts the new heading
+   * just below its own padding.
    */
-  const focusSection = useCallback(
-    (id: string) => {
-      setFocus(id);
-      // Folds are instant, so one frame is enough for the new layout to exist.
-      requestAnimationFrame(() => {
-        const headingId = rowsBySection.get(id)?.[0]?.id;
-        if (headingId) scrollToHeading(headingId, 'auto');
+  const pendingHeading = useRef<string | null>(null);
+
+  const focusSection = useCallback((id: string, headingId?: string) => {
+    pendingHeading.current = headingId ?? null;
+    setFocus(id);
+    if (!headingId) window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+
+  // A contents link can point at a heading inside a section that has just been
+  // switched to. That heading only has a position once the section is on
+  // screen, so it is resolved in a layout effect, after the swap and before
+  // paint, which keeps the scroll honest and leaves no flash.
+  //
+  // Leaving focus reverses the same problem: the sections above come back and
+  // push the one being read down the page, so the heading is held at the exact
+  // screen position it had while focused instead of sliding away.
+  const exitAnchor = useRef<{ id: string; top: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!focus) {
+      const anchor = exitAnchor.current;
+      if (!anchor) return;
+      exitAnchor.current = null;
+      const el = document.getElementById(anchor.id);
+      if (!el) return;
+      window.scrollTo({
+        top: el.getBoundingClientRect().top + window.scrollY - anchor.top,
+        behavior: 'instant',
       });
-    },
-    [rowsBySection, scrollToHeading]
-  );
+      return;
+    }
+
+    const id = pendingHeading.current;
+    if (!id) return;
+    pendingHeading.current = null;
+
+    const first = rowsBySection.get(focus)?.[0]?.id;
+    const el = id === first ? null : document.getElementById(id);
+    if (!el) {
+      window.scrollTo({ top: 0, behavior: 'instant' });
+      return;
+    }
+    window.scrollTo({
+      top: el.getBoundingClientRect().top + window.scrollY - SCROLL_OFFSET,
+      behavior: 'instant',
+    });
+  }, [focus, rowsBySection]);
+
+  const exitFocus = useCallback(() => {
+    const first = focus ? rowsBySection.get(focus)?.[0]?.id : undefined;
+    const el = first ? document.getElementById(first) : null;
+    exitAnchor.current = first && el ? { id: first, top: el.getBoundingClientRect().top } : null;
+    setFocus(null);
+    setDrawerOpen(false);
+  }, [focus, rowsBySection]);
 
   const goSection = useCallback(
     (delta: number) => {
@@ -485,6 +468,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     const current = sectionOfHeading.get(active);
     const id = current && focusable.some((s) => s.id === current) ? current : focusable[0].id;
     focusSection(id);
+    setDrawerOpen(false);
   }, [active, focusable, focusSection, sectionOfHeading]);
 
   const [expanded, setExpanded] = useState<Set<string>>(() => {
@@ -508,8 +492,8 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     for (const h of outline) {
       const el = document.getElementById(h.id);
       if (!el) continue;
-      // Headings folded away have no box at all. Left in, they would all
-      // measure top 0 and drag the scroll-spy back to the start of the page.
+      // Headings in a section focus mode is hiding have no box at all. Left in,
+      // they would all measure top 0 and drag the scroll-spy back to the start.
       if (!el.getClientRects().length) continue;
       items.push({ id: h.id, top: el.getBoundingClientRect().top + y, end: 0 });
     }
@@ -617,38 +601,16 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
       e.preventDefault();
       const sectionId = sectionOfHeading.get(id);
-      const section = sectionId ? sectionById.get(sectionId) : undefined;
-      const wasFolded =
-        sectionId !== undefined &&
-        folded.has(sectionId) &&
-        section !== undefined &&
-        section.level > 0;
-
-      // In focus mode, following a link to another section makes that the
-      // section being read, which opens it without touching the saved folds.
-      if (sectionId && focus) {
-        if (sectionId !== focus) setFocus(sectionId);
-      } else if (sectionId) {
-        setCollapsed((prev) => {
-          if (!prev.has(sectionId)) return prev;
-          const next = new Set(prev);
-          next.delete(sectionId);
-          return next;
-        });
-      }
 
       history.pushState(null, '', `#${id}`);
       setDrawerOpen(false);
 
-      if (!wasFolded) {
-        scrollToHeading(id);
-        return;
-      }
-      // A heading that was folded has no meaningful position until the section
-      // is open again, so wait for the layout before measuring the target.
-      window.setTimeout(() => scrollToHeading(id), 0);
+      // In focus mode, following a link to another section makes that the
+      // section being read.
+      if (focus && sectionId && sectionId !== focus) focusSection(sectionId, id);
+      else scrollToHeading(id);
     },
-    [folded, focus, scrollToHeading, sectionById, sectionOfHeading]
+    [focus, focusSection, scrollToHeading, sectionOfHeading]
   );
 
   const nav = (
@@ -664,6 +626,39 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
     />
   );
 
+  const focusControls = focusable.length > 1 && (
+    focus === null ? (
+      <button className="focus-toggle" onClick={enterFocus}>
+        Focus mode
+      </button>
+    ) : (
+      <div className="focus-nav">
+        <button
+          className="focus-step"
+          aria-label="Previous section"
+          disabled={focusIndex <= 0}
+          onClick={() => goSection(-1)}
+        >
+          &#8249;
+        </button>
+        <span className="focus-count" aria-live="polite">
+          {focusIndex + 1} / {focusable.length}
+        </span>
+        <button
+          className="focus-step"
+          aria-label="Next section"
+          disabled={focusIndex >= focusable.length - 1}
+          onClick={() => goSection(1)}
+        >
+          &#8250;
+        </button>
+        <button className="focus-exit" onClick={exitFocus}>
+          Exit focus
+        </button>
+      </div>
+    )
+  );
+
   const header = (
         <>
           <button className="back" onClick={onReset}>Upload another</button>
@@ -673,37 +668,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
               Restore original order
             </button>
           )}
-          {focusable.length > 1 &&
-            (focus === null ? (
-              <button className="focus-toggle" onClick={enterFocus}>
-                Focus mode
-              </button>
-            ) : (
-              <div className="focus-nav">
-                <button
-                  className="focus-step"
-                  aria-label="Previous section"
-                  disabled={focusIndex <= 0}
-                  onClick={() => goSection(-1)}
-                >
-                  &#8249;
-                </button>
-                <span className="focus-count" aria-live="polite">
-                  {focusIndex + 1} / {focusable.length}
-                </span>
-                <button
-                  className="focus-step"
-                  aria-label="Next section"
-                  disabled={focusIndex >= focusable.length - 1}
-                  onClick={() => goSection(1)}
-                >
-                  &#8250;
-                </button>
-                <button className="focus-exit" onClick={() => setFocus(null)}>
-                  Exit focus
-                </button>
-              </div>
-            ))}
+          {focusControls}
         </>
       );
 
@@ -745,21 +710,15 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
             {orderedSections.map((section) => {
               const blocks = edits.get(section.id) ?? section.blocks;
               const editing = editingSection?.id === section.id;
-              const isFolded = folded.has(section.id);
-              // A section with no heading of its own keeps nothing on screen
-              // when folded, so it is hidden whole.
-              const hidden = isFolded && section.level === 0;
-              const [lead, ...tail] = blocks;
+              // Focus mode shows one section and hides the rest whole, keeping
+              // every block mounted so an export still includes all of them.
+              const hidden = focus !== null && section.id !== focus;
               return (
                 <DraggableSection
                   key={section.id}
                   id={section.id}
-                  title={section.title}
                   editing={editing}
-                  folded={isFolded}
                   hidden={hidden}
-                  canFold={!focus && section.level > 0 && tail.length > 0}
-                  onToggleFold={() => toggleFold(section.id)}
                   onRequestEdit={(target) => {
                     const cell = editableCell(target);
                     if (cell) {
@@ -769,11 +728,6 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
                     }
                     beginEdit(section, blocks);
                   }}
-                  rest={
-                    !editing && tail.length > 0 ? (
-                      <div className="sec-rest">{tail.map(blockNode)}</div>
-                    ) : null
-                  }
                 >
                   {editing ? (
                     <SectionEditor
@@ -786,7 +740,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
                       }}
                     />
                   ) : (
-                    lead && blockNode(lead)
+                    blocks.map(blockNode)
                   )}
                 </DraggableSection>
               );
@@ -859,6 +813,7 @@ export default function Viewer({ html, name, onReset }: { html: string; name: st
                   Restore original order
                 </button>
               )}
+              {focusControls}
               {nav}
             </motion.div>
           </>

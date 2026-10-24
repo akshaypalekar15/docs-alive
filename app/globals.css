@@ -105,10 +105,10 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 
 /* PDF export uses the browser's print pipeline, so the chrome must go. */
 @media print{
-  .toc,.toc-btn,.theme,.bg,.progress,.export,.back,.reset-order,.focus-toggle,.focus-nav,.sec-handle,.sec-toggle,.link-preview{display:none !important}
-  /* Folding and focus mode are ways of reading on screen; print has to include
-     the whole document. */
-  .sec[data-collapsed=true] .sec-rest,.sec[data-hidden=true]{display:block !important}
+  .toc,.toc-btn,.theme,.bg,.progress,.export,.back,.reset-order,.focus-toggle,.focus-nav,.sec-handle,.link-preview{display:none !important}
+  /* Focus mode is a way of reading on screen; print has to include the whole
+     document. */
+  .sec[data-hidden=true]{display:block !important}
   .shell{display:block;padding:0;max-width:none}
   .doc{max-width:none;padding:0;background:none;-webkit-backdrop-filter:none;backdrop-filter:none;border-radius:0}
   /* Blocks that never scrolled into view are still at opacity 0, which would
@@ -185,18 +185,11 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 .sec-handle:hover{color:var(--accent)}
 .sec-handle:active{cursor:grabbing}
 
-/* Fold a section away, keeping its leading heading. The blocks stay in the DOM
-   and are only hidden: the exporter reads the live article, so removing them
-   would drop a folded section from every export. display:none rather than a
-   clipped height animation, because clipping would cut the table glow off. */
-.sec[data-collapsed=true] .sec-rest{display:none}
+/* Focus mode hides the sections it is not showing. They stay in the DOM and are
+   only hidden: the exporter reads the live article, so removing them would drop
+   them from every export. display:none rather than a clipped height animation,
+   because clipping would cut the table glow off. */
 .sec[data-hidden=true]{display:none}
-.sec-toggle{position:absolute;right:-4px;top:2px;z-index:1;display:grid;place-items:center;width:22px;height:22px;padding:0;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--muted);opacity:0;transition:opacity .18s ease,color .18s ease,border-color .18s ease}
-.sec:hover>.sec-toggle,.sec-toggle:focus-visible,.sec[data-collapsed=true]>.sec-toggle{opacity:1}
-.sec-toggle:hover{color:var(--accent);border-color:var(--accent)}
-.sec-toggle svg{transition:transform .22s cubic-bezier(.2,.8,.2,1)}
-.sec[data-collapsed=true]>.sec-toggle svg{transform:rotate(-90deg)}
-@media (prefers-reduced-motion:reduce){.sec-toggle,.sec-toggle svg{transition:none}}
 
 /* Reading one section at a time. Nothing here is persisted: focus mode is a
    state of reading, not a property of the document. */
