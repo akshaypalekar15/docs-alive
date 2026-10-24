@@ -2,11 +2,14 @@
  * Plain-text editing of a section.
  *
  * This is a round-trip through a light markup dialect: a link is shown as
- * `text (https://example.com)`-style `[text](url)`, bold as `**bold**` and
- * italics as `*italics*`, so a section keeps its links and its emphasis while
- * it is edited. Anything else inside a block — inline formatting without a
- * marker, images — is reduced to plain words. The heading keeps its original
- * element id so the table of contents and the scroll-spy keep working.
+ * `[text](url)`, bold as `**bold**`, italics as `*italics*`, strikethrough as
+ * `~~struck~~`, inline code as `` `code` ``, subscript as `H~2~O` and
+ * superscript as `x^2^`. That keeps the inline formatting mammoth emits while
+ * the section is edited. Anything without a marker is reduced to plain words,
+ * but only in a block the reader actually changed: a block whose text comes
+ * back untouched keeps its original markup (see textToBlocks). The heading
+ * keeps its original element id so the table of contents and the scroll-spy
+ * keep working.
  *
  * Data tables and images are the exception. Flattening a table into paragraphs
  * destroys its shape for good, and an image would collapse into a placeholder,
@@ -25,7 +28,7 @@ export function escapeHtml(value: string): string {
 }
 
 /** A backslash escapes the next character, so prose containing `*` survives. */
-const escapeMarkdown = (value: string) => value.replace(/[\\*]/g, '\\$&');
+const escapeMarkdown = (value: string) => value.replace(/[\\*~^`]/g, '\\$&');
 
 function nodeToMarkdown(node: Node): string {
   if (node.nodeType === 3) return escapeMarkdown((node.nodeValue ?? '').replace(/\s+/g, ' '));
@@ -37,12 +40,17 @@ function nodeToMarkdown(node: Node): string {
   if (tag === 'IMG') return '';
 
   const inner = Array.from(el.childNodes).map(nodeToMarkdown).join('');
+  const wrap = (marker: string) => (inner.trim() === '' ? inner : `${marker}${inner}${marker}`);
   if (tag === 'A') {
     const href = el.getAttribute('href');
     return href ? `[${inner.trim()}](${href})` : inner;
   }
-  if (tag === 'STRONG' || tag === 'B') return inner.trim() === '' ? inner : `**${inner}**`;
-  if (tag === 'EM' || tag === 'I') return inner.trim() === '' ? inner : `*${inner}*`;
+  if (tag === 'STRONG' || tag === 'B') return wrap('**');
+  if (tag === 'EM' || tag === 'I') return wrap('*');
+  if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') return wrap('~~');
+  if (tag === 'SUB') return wrap('~');
+  if (tag === 'SUP') return wrap('^');
+  if (tag === 'CODE' || tag === 'KBD' || tag === 'SAMP') return wrap('`');
   return inner;
 }
 
@@ -97,6 +105,42 @@ function inlineFromMarkdown(src: string): string {
       }
     }
 
+    if (ch === '~' && src[i + 1] === '~') {
+      const end = src.indexOf('~~', i + 2);
+      if (end > -1) {
+        out += `<s>${inlineFromMarkdown(src.slice(i + 2, end))}</s>`;
+        i = end + 2;
+        continue;
+      }
+    }
+
+    if (ch === '~') {
+      const end = src.indexOf('~', i + 1);
+      if (end > i + 1) {
+        out += `<sub>${inlineFromMarkdown(src.slice(i + 1, end))}</sub>`;
+        i = end + 1;
+        continue;
+      }
+    }
+
+    if (ch === '^') {
+      const end = src.indexOf('^', i + 1);
+      if (end > i + 1) {
+        out += `<sup>${inlineFromMarkdown(src.slice(i + 1, end))}</sup>`;
+        i = end + 1;
+        continue;
+      }
+    }
+
+    if (ch === '`') {
+      const end = src.indexOf('`', i + 1);
+      if (end > -1) {
+        out += `<code>${src.slice(i + 1, end).replace(/\\([\s\S])/g, '$1')}</code>`;
+        i = end + 1;
+        continue;
+      }
+    }
+
     if (ch === '[') {
       const close = src.indexOf(']', i + 1);
       if (close > -1 && src[close + 1] === '(') {
@@ -122,9 +166,13 @@ function inlineFromMarkdown(src: string): string {
 /** The text a reader sees, with the markup markers taken back out. */
 const stripInline = (value: string) =>
   value
-    .replace(/\\([\\*])/g, '$1')
+    .replace(/\\([\\*~^`])/g, '$1')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/\*([^*\s][^*]*)\*/g, '$1')
+    .replace(/~~([^~]+)~~/g, '$1')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/~([^~\s][^~]*)~/g, '$1')
+    .replace(/\^([^\^\s][^\^]*)\^/g, '$1')
     .replace(/\[([^\]]*)\]\(([^)]*)\)/g, '$1');
 
 function innerHtml(html: string): string {
@@ -196,7 +244,22 @@ export function sectionToText(section: Section): string {
     .join('\n\n');
 }
 
-const normalise = (value: string) => value.toLowerCase().replace(/\s+/g, ' ').trim();
+/**
+ * The comparable form of a paragraph: what the reader sees, with inline markers
+ * and list bullets removed. Alignment must not depend on the markup, or
+ * changing a word's bold would look like a different paragraph. Lists need
+ * their bullets and indentation removed too, since a block's text does not
+ * carry them.
+ */
+const alignKey = (value: string) =>
+  stripInline(value)
+    .replace(/^[ \t]*(?:[-*+]|\d+\.)[ \t]+/gm, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+
+/** Exact editor text, used to decide whether a block was touched at all. */
+const editorKey = (value: string) => value.replace(/\r\n?/g, '\n').trim();
 
 const splitChunks = (text: string) =>
   text
@@ -211,14 +274,14 @@ const splitChunks = (text: string) =>
  * after it. The sections involved hold a handful of blocks, so the quadratic
  * table is free.
  */
-function alignToBlocks(original: Block[], chunks: string[]): Map<number, number> {
-  const m = original.length;
-  const n = chunks.length;
+function alignToBlocks(originalKeys: string[], chunkKeys: string[]): Map<number, number> {
+  const m = originalKeys.length;
+  const n = chunkKeys.length;
   const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
   for (let i = m - 1; i >= 0; i--) {
     for (let j = n - 1; j >= 0; j--) {
       dp[i][j] =
-        normalise(original[i].text) === normalise(chunks[j])
+        originalKeys[i] === chunkKeys[j]
           ? dp[i + 1][j + 1] + 1
           : Math.max(dp[i + 1][j], dp[i][j + 1]);
     }
@@ -228,7 +291,7 @@ function alignToBlocks(original: Block[], chunks: string[]): Map<number, number>
   let i = 0;
   let j = 0;
   while (i < m && j < n) {
-    if (normalise(original[i].text) === normalise(chunks[j])) {
+    if (originalKeys[i] === chunkKeys[j]) {
       matches.set(j, i);
       i++;
       j++;
@@ -238,6 +301,28 @@ function alignToBlocks(original: Block[], chunks: string[]): Map<number, number>
       j++;
     }
   }
+
+  // The LCS only pairs paragraphs whose text is unchanged, so a reworded
+  // paragraph would look like a brand-new block — losing its id, and turning a
+  // reworded subheading into a plain paragraph. When a gap between two anchors
+  // holds the same number of paragraphs on both sides, the reader reworded them
+  // rather than adding or removing one, so pair them by position.
+  const anchors = [...matches.entries()].sort((a, b) => a[0] - b[0]);
+  anchors.push([n, m]);
+  let prevChunk = -1;
+  let prevBlock = -1;
+  for (const [chunk, block] of anchors) {
+    const chunkGap = chunk - prevChunk - 1;
+    const blockGap = block - prevBlock - 1;
+    if (chunkGap > 0 && chunkGap === blockGap) {
+      for (let k = 0; k < chunkGap; k++) {
+        matches.set(prevChunk + 1 + k, prevBlock + 1 + k);
+      }
+    }
+    prevChunk = chunk;
+    prevBlock = block;
+  }
+
   return matches;
 }
 
@@ -263,10 +348,18 @@ function buildList(items: ListItem[], start: number, depth: number): { html: str
   return { html: `${html}</${tag}>`, next: i };
 }
 
-function toBlock(section: Section, chunk: string, original: Block | undefined, index: number): Block {
+/** A fresh id that cannot collide with one already in the section. */
+function uniqueId(base: string, used: Set<string>): string {
+  let id = base;
+  let n = 2;
+  while (used.has(id)) id = `${base}-${n++}`;
+  used.add(id);
+  return id;
+}
+
+function toBlock(chunk: string, original: Block | undefined, id: string): Block {
   const text = stripInline(chunk);
   const rendered = (value: string) => inlineFromMarkdown(escapeHtml(value));
-  const id = original?.id ?? `${section.id}-edit-${index}`;
 
   if (original && original.level > 0) {
     const headingId = original.headingIds[0] ?? '';
@@ -304,6 +397,12 @@ function toBlock(section: Section, chunk: string, original: Block | undefined, i
  * Rebuilds a section's blocks from edited plain text. Preserved blocks — data
  * tables and images — are carried over untouched and re-inserted after the
  * block they originally followed.
+ *
+ * A block whose text comes back exactly as it went in is kept as-is rather than
+ * rebuilt from the textarea. The dialect only carries the inline formatting
+ * that has a marker, so rebuilding an untouched paragraph would quietly strip
+ * everything else it had — a quote, a code span, a class mammoth emitted. Only
+ * the paragraph the reader actually changed is rebuilt.
  */
 export function textToBlocks(section: Section, text: string): Block[] {
   const chunks = splitChunks(text);
@@ -326,10 +425,11 @@ export function textToBlocks(section: Section, text: string): Block[] {
     editable.push(block);
   }
 
+  const originalText = editable.map(blockToText);
   // Alignment compares what the reader sees, not the markup around it, so a
-// paragraph still matches its block after the reader edits the link or the
-// bold in it.
-const matches = alignToBlocks(editable, chunks.map(stripInline));
+  // paragraph still matches its block after the reader edits the link or the
+  // bold in it.
+  const matches = alignToBlocks(originalText.map(alignKey), chunks.map(alignKey));
 
   // A section always opens with its heading, and its id is what the outline and
   // the scroll-spy navigate by, so the first paragraph is that heading even when
@@ -341,6 +441,7 @@ const matches = alignToBlocks(editable, chunks.map(stripInline));
     }
   }
 
+  const used = new Set(section.blocks.map((b) => b.id));
   const groups = new Map<number, Block[]>();
   let lastSlot = -1;
   chunks.forEach((chunk, ci) => {
@@ -348,8 +449,19 @@ const matches = alignToBlocks(editable, chunks.map(stripInline));
     if (matched !== undefined) lastSlot = matched;
     // A paragraph the reader added joins the block it was typed next to.
     const key = matched ?? lastSlot;
+    const original = matched !== undefined ? editable[matched] : undefined;
+
+    let block: Block;
+    if (original !== undefined && matched !== undefined && editorKey(chunk) === editorKey(originalText[matched])) {
+      block = original;
+    } else {
+      // A reworded block keeps its id, so it stays the same block as far as the
+      // rest of the view is concerned; only a genuinely new block gets a new one.
+      block = toBlock(chunk, original, original?.id ?? uniqueId(`${section.id}-edit-${ci}`, used));
+    }
+
     const list = groups.get(key) ?? [];
-    list.push(toBlock(section, chunk, matched !== undefined ? editable[matched] : undefined, list.length));
+    list.push(block);
     groups.set(key, list);
   });
 
