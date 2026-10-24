@@ -7,9 +7,10 @@ Upload a document. Read it, don't scroll it.
 Drop in a `.docx`, `.md`, or `.txt` file and Docs Alive renders it as a focused
 reading view: a sticky table of contents, scroll-spy highlighting, fade-in
 transitions as sections come into view, and a reading progress bar. Rearrange
-the sections the way you want to read them, sort the tables, correct anything
-that reads wrong, then export the result. Everything runs client-side — files
-never leave the browser.
+the sections the way you want to read them, fold what you have finished with,
+or focus on one section at a time; sort the tables, correct anything that reads
+wrong, then export the result. Everything runs client-side — files never leave
+the browser.
 
 ## Features
 
@@ -30,6 +31,8 @@ never leave the browser.
 
 - **Drag to reorder** — grab a section by the handle beside it, or by its grip in the table of contents. The two stay in step: what you do in one shows in the other, because the outline is built from the reader's order rather than the parse order
 - **Arrangement is remembered** — the order is saved per document in `localStorage`, so reopening the same file restores it. A **Reset order** control puts it back
+- **Fold a section away** — the chevron at the section's right edge hides everything after its heading, leaving the heading to mark where it is. Folded sections are remembered per document, and following a contents link into one unfolds it
+- **Focus mode** — read a single section at a time, with the rest of the document reduced to its headings and previous/next steps to move through. It overrides your folds while it is on and changes nothing when you leave it, so exiting returns the document exactly as you had it
 - **Sortable tables** — click a column header to sort. Numeric columns sort by value, so 2 comes before 10. Merged headers map to the right data columns, bold sub-header rows stay pinned, and the header keeps its table alignment
 
 ### Editing
@@ -43,7 +46,7 @@ never leave the browser.
 ### Export
 
 - **Four formats** — `.docx`, `.md`, `.html`, and PDF via the print stylesheet
-- **Exports what you see** — the reader's section order and any sorting you applied are carried into the output, and content below the fold is exported at full opacity rather than mid-fade
+- **Exports what you see** — the reader's section order and any sorting you applied are carried into the output, and content below the fold is exported at full opacity rather than mid-fade. Folded sections and focus mode are reading states, so every export and print includes them in full
 - **Tells you when the document has been changed** — the export control is marked once you reorder or re-sort, and editing counts too
 
 ## Getting started
@@ -81,7 +84,7 @@ app/
   page.tsx                 Upload + conversion
   globals.css              Design tokens and all styling
 components/
-  Viewer.tsx               Document view, section reordering, scroll-spy, editing
+  Viewer.tsx               Document view, reordering, folding, focus mode, scroll-spy, editing
   TocNav.tsx               Accordion table of contents, draggable to reorder
   SectionEditor.tsx        Inline field for editing a section or a table cell
   TableSort.tsx            Click-to-sort wiring for table headers
@@ -90,7 +93,7 @@ components/
   Background.tsx           Cursor-reactive parallax background
   ThemeToggle.tsx          Dark/light toggle
 lib/
-  sections.ts              Blocks, section grouping, per-document storage key
+  sections.ts              Blocks, section grouping, per-document order and fold keys
   sectionText.ts           Markup round-trip for editing a section's text
   sorttable.ts             Header mapping, numeric detection, sorting
   useDragSelectionGuard.ts Suppresses text selection during a drag
@@ -105,7 +108,9 @@ Keyboard focus rings, semantic headings and table markup, and a
 `prefers-reduced-motion` path are all in place, and the mobile layout collapses
 the sidebar behind a **Contents** button. Drag handles are decorative and
 marked `aria-hidden`: reordering is pointer-only for now, with the **Reset
-order** control as the keyboard-reachable way to undo a rearrangement.
+order** control as the keyboard-reachable way to undo a rearrangement. Folding
+and focus mode are ordinary buttons — the fold control carries `aria-expanded`
+and the focus step count is announced as it changes.
 
 ## Contributing
 

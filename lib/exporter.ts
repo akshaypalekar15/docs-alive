@@ -210,7 +210,13 @@ export function toMarkdown(blocks: Block[]): string {
 export function toHtmlDocument(root: HTMLElement, title: string): string {
   const clone = root.cloneNode(true) as HTMLElement;
 
-  clone.querySelectorAll('.sec-handle').forEach((n) => n.remove());
+  clone.querySelectorAll('.sec-handle, .sec-toggle').forEach((n) => n.remove());
+  // Folding and focus mode are reading states, not document content.
+  clone.querySelectorAll<HTMLElement>('.sec').forEach((n) => {
+    n.removeAttribute('data-collapsed');
+    n.removeAttribute('data-hidden');
+    n.removeAttribute('data-editing');
+  });
   clone.querySelectorAll<HTMLElement>('.blk').forEach((n) => {
     n.style.opacity = '1';
     n.removeAttribute('data-level');

@@ -87,9 +87,35 @@ export function hashKey(input: string): string {
 }
 
 const STORAGE_PREFIX = 'docs-alive-order:';
+const FOLD_PREFIX = 'docs-alive-fold:';
 
 export function storageKeyFor(html: string): string {
   return STORAGE_PREFIX + hashKey(html);
+}
+
+export function foldKeyFor(html: string): string {
+  return FOLD_PREFIX + hashKey(html);
+}
+
+/**
+ * Folded section ids that still exist in this document. Only sections with a
+ * heading can be folded - the lead section has no heading to leave behind, so
+ * folding it would hide content with nothing on screen to unfold it again.
+ */
+export function restoreFolds(stored: string | null, sections: Section[]): Set<string> {
+  if (!stored) return new Set();
+
+  try {
+    const parsed: unknown = JSON.parse(stored);
+    if (!Array.isArray(parsed)) return new Set();
+
+    const foldable = new Set(sections.filter((s) => s.level > 0).map((s) => s.id));
+    return new Set(
+      parsed.filter((id): id is string => typeof id === 'string' && foldable.has(id))
+    );
+  } catch {
+    return new Set();
+  }
 }
 
 /**

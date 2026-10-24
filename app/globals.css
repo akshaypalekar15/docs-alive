@@ -60,7 +60,9 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 .shell{position:relative;z-index:1;display:grid;grid-template-columns:260px minmax(0,1fr);gap:48px;max-width:1160px;margin:0 auto;padding:0 24px}
 .toc{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:32px 0;font-family:var(--sans);font-size:.9rem}
 .toc-nav{display:flex;flex-direction:column;gap:2px}
-.toc-item{position:relative}
+/* framer's Reorder.Item renders an <li>, which would otherwise draw a bullet
+   marker in the margin beside every section. */
+.toc-item{position:relative;list-style:none}
 .toc-rowwrap{position:relative}
 .toc-row{position:relative;display:flex;align-items:center;gap:6px;width:100%;padding:6px 22px 6px 12px;border:0;border-left:2px solid transparent;background:none;font:inherit;color:var(--muted);text-align:left;text-decoration:none;cursor:pointer;overflow:hidden;border-radius:0 5px 5px 0}
 .toc-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -103,7 +105,10 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 
 /* PDF export uses the browser's print pipeline, so the chrome must go. */
 @media print{
-  .toc,.toc-btn,.theme,.bg,.progress,.export,.back,.reset-order,.sec-handle,.link-preview{display:none !important}
+  .toc,.toc-btn,.theme,.bg,.progress,.export,.back,.reset-order,.focus-toggle,.focus-nav,.sec-handle,.sec-toggle,.link-preview{display:none !important}
+  /* Folding and focus mode are ways of reading on screen; print has to include
+     the whole document. */
+  .sec[data-collapsed=true] .sec-rest,.sec[data-hidden=true]{display:block !important}
   .shell{display:block;padding:0;max-width:none}
   .doc{max-width:none;padding:0;background:none;-webkit-backdrop-filter:none;backdrop-filter:none;border-radius:0}
   /* Blocks that never scrolled into view are still at opacity 0, which would
@@ -173,12 +178,35 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--serif),
 
 /* Draggable sections */
 .secs{display:flex;flex-direction:column}
-.sec{position:relative}
+.sec{position:relative;list-style:none}
 .sec-body{position:relative}
 .sec-handle{position:absolute;left:-26px;top:2px;display:grid;place-items:center;width:20px;height:22px;border-radius:5px;color:var(--muted);opacity:0;cursor:grab;touch-action:none;user-select:none;transition:opacity .18s ease,color .18s ease}
 .sec:hover>.sec-handle,.sec-handle:focus-visible{opacity:1}
 .sec-handle:hover{color:var(--accent)}
 .sec-handle:active{cursor:grabbing}
+
+/* Fold a section away, keeping its leading heading. The blocks stay in the DOM
+   and are only hidden: the exporter reads the live article, so removing them
+   would drop a folded section from every export. display:none rather than a
+   clipped height animation, because clipping would cut the table glow off. */
+.sec[data-collapsed=true] .sec-rest{display:none}
+.sec[data-hidden=true]{display:none}
+.sec-toggle{position:absolute;right:-4px;top:2px;z-index:1;display:grid;place-items:center;width:22px;height:22px;padding:0;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--muted);opacity:0;transition:opacity .18s ease,color .18s ease,border-color .18s ease}
+.sec:hover>.sec-toggle,.sec-toggle:focus-visible,.sec[data-collapsed=true]>.sec-toggle{opacity:1}
+.sec-toggle:hover{color:var(--accent);border-color:var(--accent)}
+.sec-toggle svg{transition:transform .22s cubic-bezier(.2,.8,.2,1)}
+.sec[data-collapsed=true]>.sec-toggle svg{transform:rotate(-90deg)}
+@media (prefers-reduced-motion:reduce){.sec-toggle,.sec-toggle svg{transition:none}}
+
+/* Reading one section at a time. Nothing here is persisted: focus mode is a
+   state of reading, not a property of the document. */
+.focus-toggle{display:block;margin:-12px 0 20px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--muted);font-family:var(--sans);font-size:.78rem;transition:color .2s,border-color .2s}
+.focus-toggle:hover{color:var(--accent);border-color:var(--accent)}
+.focus-nav{display:flex;align-items:center;gap:6px;margin:-12px 0 20px;font-family:var(--sans)}
+.focus-step{display:grid;place-items:center;width:26px;height:26px;padding:0;border:1px solid var(--line);border-radius:6px;background:var(--surface);color:var(--ink);font-size:1rem;line-height:1}
+.focus-step:disabled{opacity:.4;cursor:default}
+.focus-count{min-width:3.4em;text-align:center;font-size:.78rem;color:var(--muted)}
+.focus-exit{margin-left:auto;padding:4px;border:0;background:none;color:var(--accent);font-family:var(--sans);font-size:.78rem}
 
 /* A drag sweeps across text, and the browser starts highlighting the moment the
    pointer does. Selection is off for the duration of the drag and the range is
