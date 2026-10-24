@@ -37,8 +37,8 @@ Everything runs client-side — files never leave the browser.
 
 - **Double-click a section** to edit its text in place. Blur or `Ctrl`/`Cmd`+`Enter` saves, `Escape` cancels
 - **Double-click a table cell** to edit just that cell — as a single-line field sitting over the cell, so the table never reflows while you type
-- **Editing does not cost you the document.** The round-trip is a light markup dialect — `[text](url)`, `**bold**`, `*italic*`, and `- ` / `1. ` with two-space indentation per nesting level — so links, emphasis and nested lists survive. Data tables and images are held back from the textarea entirely and put back exactly where they were. Only `http`, `https`, `mailto` and relative link targets are allowed through
-- **A heading keeps its id**, so the table of contents and the scroll-spy keep working after a reword. Reworded paragraphs are matched back to their original position, so editing one does not shift the blocks after it
+- **Editing does not cost you the document.** The round-trip is a light markup dialect — `[text](url)`, `**bold**`, `*italic*`, `~~strikethrough~~`, `` `code` ``, `H~2~O`, `x^2^`, and `- ` / `1. ` with two-space indentation per nesting level — so links, emphasis, strike, code, sub/superscript and nested lists survive. Blocks you leave alone are put back byte-for-byte, markup included. Data tables and images are held back from the textarea entirely and put back exactly where they were. Only `http`, `https`, `mailto` and relative link targets are allowed through
+- **A heading keeps its id and its level**, so the table of contents and the scroll-spy keep working after a reword. Reworded paragraphs are matched back to their original position, so editing one does not shift the blocks after it
 - **Edits are session-only.** Nothing is written back to the uploaded file; upload it again to start fresh
 
 ### Export
